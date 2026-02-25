@@ -2,7 +2,7 @@
 
 from typing import Dict, Any
 from langgraph_app.orchestrator.state import GraphState
-from langgraph_app.utils.gemini_client import GeminiClient
+from langgraph_app.utils.llm_factory import get_llm_client
 
 
 def global_guardrail_node(state: GraphState) -> GraphState:
@@ -15,7 +15,7 @@ def global_guardrail_node(state: GraphState) -> GraphState:
     Returns:
         Updated state with safety analysis
     """
-    client = GeminiClient()
+    client = get_llm_client()
     input_text = state.get("input", {}).get("text", "")
     
     if not input_text:

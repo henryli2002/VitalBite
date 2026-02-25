@@ -3,7 +3,7 @@
 from typing import Dict, Any
 import json
 from langgraph_app.orchestrator.state import GraphState
-from langgraph_app.utils.gemini_client import GeminiClient
+from langgraph_app.utils.llm_factory import get_llm_client
 from langchain_core.messages import AIMessage
 from langgraph_app.utils.utils import detect_language
 from langgraph_app.config import config
@@ -19,7 +19,8 @@ def food_recognition_node(state: GraphState) -> GraphState:
         Updated state with recognition results and final response
     """
     state = state.copy()
-    client = GeminiClient()
+    state.setdefault("messages", [])
+    client = get_llm_client()
     input_data = state.get("input", {})
     image_data = input_data.get("image_data")
     text = input_data.get("text", "")

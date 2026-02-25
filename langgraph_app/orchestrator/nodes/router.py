@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, Literal
 from langgraph_app.orchestrator.state import GraphState
-from langgraph_app.utils.gemini_client import GeminiClient
+from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.config import config
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage
@@ -132,7 +132,7 @@ def intent_router_node(state: GraphState) -> GraphState:
     Returns:
         Updated state with intent analysis
     """
-    client = GeminiClient()
+    client = get_llm_client()
     input_data = state.get("input", {})
     text = input_data.get("text", "")
     image_data = input_data.get("image_data")

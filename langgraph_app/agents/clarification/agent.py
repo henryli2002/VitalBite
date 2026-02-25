@@ -4,7 +4,7 @@ from typing import Dict, Any
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 from langgraph_app.orchestrator.state import GraphState
-from langgraph_app.utils.gemini_client import GeminiClient
+from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.utils import detect_language
 from langgraph_app.config import config
 
@@ -20,7 +20,9 @@ def clarification_node(state: GraphState) -> GraphState:
         Updated state with clarification response
     """
     state = state.copy()
-    client = GeminiClient()
+    # ensure messages exists
+    state.setdefault("messages", [])
+    client = get_llm_client()
     input_data = state.get("input", {})
     text = input_data.get("text", "")
     image_data = input_data.get("image_data")
