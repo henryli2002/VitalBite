@@ -19,7 +19,7 @@ T = TypeVar("T", bound=BaseModel)
 class OpenAIClient:
     """Client for interacting with OpenAI Chat Completions (supports vision)."""
 
-    def __init__(self, model_name: str | None = None):
+    def __init__(self, model_name: str | None = None, temperature: float = 0.2):
         """Initialize OpenAI client."""
 
         if model_name is None:
@@ -31,6 +31,7 @@ class OpenAIClient:
 
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
+        self.temperature = temperature
 
     def generate_text(
         self,
@@ -48,6 +49,7 @@ class OpenAIClient:
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
+            temperature=self.temperature,
         )
 
         return response.choices[0].message.content or ""
@@ -82,6 +84,7 @@ class OpenAIClient:
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
+            temperature=self.temperature,
         )
 
         return response.choices[0].message.content or ""
@@ -121,6 +124,7 @@ class OpenAIClient:
             model=self.model_name,
             messages=messages,
             response_format={"type": "json_object"},
+            temperature=self.temperature,
         )
 
         text = response.choices[0].message.content or "{}"

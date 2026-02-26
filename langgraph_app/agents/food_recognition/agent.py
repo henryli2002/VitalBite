@@ -81,10 +81,14 @@ Use the following guidelines:
 
     try:
         # Use vision generation
+        system_instruction = (
+            "You are a nutrition expert. Analyze food images and provide accurate nutritional information. "
+            "Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."
+        )
         response_text = client.generate_vision(
             image_data,
             vision_prompt,
-            system_instruction="You are a nutrition expert. Analyze food images and provide accurate nutritional information."
+            system_instruction=system_instruction,
         )
         
         # Try to parse JSON from response

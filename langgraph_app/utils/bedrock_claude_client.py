@@ -21,13 +21,14 @@ T = TypeVar("T", bound=BaseModel)
 class BedrockClaudeClient:
     """Client for interacting with Anthropic Claude on AWS Bedrock."""
 
-    def __init__(self, model_name: str | None = None, region_name: str | None = None):
+    def __init__(self, model_name: str | None = None, region_name: str | None = None, temperature: float = 0.2):
         if model_name is None:
             model_name = app_config.BEDROCK_CLAUDE_MODEL_NAME
 
         region = region_name or os.getenv("AWS_REGION") or "us-east-1"
 
         self.model_name = model_name
+        self.temperature = temperature
         self.client = boto3.client(
             "bedrock-runtime",
             region_name=region,
@@ -75,7 +76,7 @@ class BedrockClaudeClient:
         response = self.client.converse(
             modelId=self.model_name,
             messages=messages,
-            inferenceConfig={"maxTokens": 2048},
+            inferenceConfig={"maxTokens": 2048, "temperature": self.temperature},
         )
 
         outputs = response.get("output", {}).get("message", {}).get("content", [])
@@ -93,7 +94,7 @@ class BedrockClaudeClient:
         response = self.client.converse(
             modelId=self.model_name,
             messages=messages,
-            inferenceConfig={"maxTokens": 2048},
+            inferenceConfig={"maxTokens": 2048, "temperature": self.temperature},
         )
 
         outputs = response.get("output", {}).get("message", {}).get("content", [])
@@ -113,7 +114,7 @@ class BedrockClaudeClient:
         response = self.client.converse(
             modelId=self.model_name,
             messages=messages,
-            inferenceConfig={"maxTokens": 2048},
+            inferenceConfig={"maxTokens": 2048, "temperature": self.temperature},
             additionalModelRequestFields={
                 "response_format": {"type": "json_object"}
             },

@@ -125,7 +125,9 @@ Extract the following information and respond in JSON format:
     "cuisine_type": "cuisine type or null",
     "dietary_restrictions": ["list", "of", "restrictions"],
     "price_range": "budget|moderate|expensive or null"
-}}"""
+}}
+
+Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."""
 
     try:
         query_params = client.generate_structured(extraction_prompt, RecommendationQuery)
@@ -150,15 +152,21 @@ Restaurants:
 
 User's original query: {text}
 
-Provide a warm, helpful response in Chinese that:
+Provide a warm, helpful response that:
 1. Acknowledges the user's request
 2. Lists the recommended restaurants with key details
 3. Mentions why each restaurant might be a good fit
-4. Keeps it concise and friendly"""
+4. Keeps it concise and friendly
 
+Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."""
+
+        system_instruction = (
+            "You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions. "
+            "Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."
+        )
         final_response = client.generate_text(
             formatting_prompt,
-            system_instruction="You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions."
+            system_instruction=system_instruction,
         )
         state["recommendation_result"] = {
             "restaurants": restaurants,
