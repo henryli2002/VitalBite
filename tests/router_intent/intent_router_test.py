@@ -3,7 +3,7 @@ import json
 import os
 import sys
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, cast
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph_app.orchestrator.nodes.router import intent_router_node
@@ -43,7 +43,7 @@ PRICE_PER_1K = {
     # Claude 3 Haiku 官方价：$0.25/百万输入，$1.25/百万输出 → 换算1K（你原来的数值偏高）
     "bedrock_claude": {"input": 0.00025, "output": 0.00125}  
 }
-}
+
 
 
 def estimate_tokens_from_text(text: str) -> int:
@@ -74,10 +74,30 @@ def run_tests(test_turn: int, provider: str | None):
         total_baseline_correct = 0
         total_count = len(test_cases)
 
-        # metrics
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_time_sec = 0.0
+        aggregated_metrics = {
+            "router": {
+                "total_time": 0.0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_cost": 0.0,
+                "count": 0,
+            },
+            "clarification": {
+                "total_time": 0.0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_cost": 0.0,
+                "count": 0,
+                "total_cases": 0,
+            },
+            "overall": {
+                "total_time": 0.0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_cost": 0.0,
+                "count": 0,
+            },
+        }
 
         output_lines: List[str] = []
 
@@ -112,37 +132,85 @@ def run_tests(test_turn: int, provider: str | None):
                 },
             }
 
-            # Run Router Node
-            try:
-                start_time = time.perf_counter()
-                router_result = intent_router_node(state)
-                analysis = router_result.get("analysis", {})
-                actual_intent = analysis.get("intent", "error")
+            history_text = "\n".join([str(m.content) for m in messages])
+            user_text = str(input_data.get("text", ""))
 
-                # If intent is clarification, also run clarification agent
-                clarification_response = ""
+            router_input_tokens = estimate_tokens_from_text(user_text + history_text)
+            router_output_tokens = 0
+            router_elapsed = 0.0
+            router_cost = 0.0
+
+            clarification_response = ""
+            clarification_input_tokens = 0
+            clarification_output_tokens = 0
+            clarification_elapsed = 0.0
+            clarification_cost = 0.0
+            clarification_triggered = False
+
+            actual_intent = "error"
+            analysis: Dict[str, Any] = {}
+
+            router_start = time.perf_counter()
+            try:
+                router_result = intent_router_node(state)
+                router_elapsed = time.perf_counter() - router_start
+                analysis = cast(Dict[str, Any], router_result.get("analysis", {}))
+                actual_intent = analysis.get("intent", "error")
+                router_output_tokens = estimate_tokens_from_text(json.dumps(analysis, ensure_ascii=False))
+                router_cost = estimate_cost(llm_provider, router_input_tokens, router_output_tokens)
+
                 if actual_intent == "clarification":
-                    # Router only returns analysis, we need to merge with state to pass to clarification_node
+                    clarification_triggered = True
                     state.update(router_result)
-                    clarification_result = clarification_node(state)
-                    clarification_response = clarification_result.get("final_response", "")
-                elapsed = time.perf_counter() - start_time
+                    clar_start = time.perf_counter()
+                    try:
+                        clarification_result = clarification_node(state)
+                        clarification_elapsed = time.perf_counter() - clar_start
+                        clarification_response = clarification_result.get("final_response", "")
+                    except Exception as clar_err:
+                        clarification_elapsed = time.perf_counter() - clar_start
+                        print(f"Clarification node failed for case {case_id}: {clar_err}")
+                        clarification_response = ""
+
+                    clarification_input_tokens = estimate_tokens_from_text(user_text + history_text + actual_intent)
+                    clarification_output_tokens = estimate_tokens_from_text(clarification_response)
+                    clarification_cost = estimate_cost(
+                        llm_provider,
+                        clarification_input_tokens,
+                        clarification_output_tokens,
+                    )
             except Exception as e:
+                router_elapsed = time.perf_counter() - router_start
                 print(f"Error running nodes for case {case_id}: {e}")
                 actual_intent = "error"
-                clarification_response = ""
-                elapsed = 0.0
+                router_output_tokens = estimate_tokens_from_text(actual_intent)
+                router_cost = estimate_cost(llm_provider, router_input_tokens, router_output_tokens)
 
-            total_time_sec += elapsed
+            case_input_tokens = router_input_tokens + clarification_input_tokens
+            case_output_tokens = router_output_tokens + clarification_output_tokens
+            case_time = router_elapsed + clarification_elapsed
+            case_cost = router_cost + clarification_cost
 
-            # crude token estimate: user text + history vs. responses
-            # input tokens: current text + serialized history contents
-            history_text = "\n".join([str(m.content) for m in messages])
-            input_tokens = estimate_tokens_from_text(str(input_data.get("text", "")) + history_text)
-            # output tokens: intent label + clarification response if any
-            output_tokens = estimate_tokens_from_text(actual_intent) + estimate_tokens_from_text(clarification_response)
-            total_input_tokens += input_tokens
-            total_output_tokens += output_tokens
+            aggregated_metrics["router"]["total_time"] += router_elapsed
+            aggregated_metrics["router"]["total_input_tokens"] += router_input_tokens
+            aggregated_metrics["router"]["total_output_tokens"] += router_output_tokens
+            aggregated_metrics["router"]["total_cost"] += router_cost
+            aggregated_metrics["router"]["count"] += 1
+
+            aggregated_metrics["clarification"]["total_cases"] += 1
+
+            if clarification_triggered:
+                aggregated_metrics["clarification"]["total_time"] += clarification_elapsed
+                aggregated_metrics["clarification"]["total_input_tokens"] += clarification_input_tokens
+                aggregated_metrics["clarification"]["total_output_tokens"] += clarification_output_tokens
+                aggregated_metrics["clarification"]["total_cost"] += clarification_cost
+                aggregated_metrics["clarification"]["count"] += 1
+
+            aggregated_metrics["overall"]["total_time"] += case_time
+            aggregated_metrics["overall"]["total_input_tokens"] += case_input_tokens
+            aggregated_metrics["overall"]["total_output_tokens"] += case_output_tokens
+            aggregated_metrics["overall"]["total_cost"] += case_cost
+            aggregated_metrics["overall"]["count"] += 1
 
             expected_intent = case["expected_analysis"]["intent"]
 
@@ -182,6 +250,34 @@ def run_tests(test_turn: int, provider: str | None):
                 print(clar_row)
                 output_lines.append(clar_row)
 
+            router_metrics_row = (
+                "     router_metrics: "
+                f"time={router_elapsed:.2f}s, "
+                f"tokens_in={router_input_tokens}, tokens_out={router_output_tokens}, "
+                f"cost=${router_cost:.4f}"
+            )
+            print(router_metrics_row)
+            output_lines.append(router_metrics_row)
+
+            if clarification_triggered:
+                clarification_metrics_row = (
+                    "     clarification_metrics: "
+                    f"time={clarification_elapsed:.2f}s, "
+                    f"tokens_in={clarification_input_tokens}, tokens_out={clarification_output_tokens}, "
+                    f"cost=${clarification_cost:.4f}"
+                )
+                print(clarification_metrics_row)
+                output_lines.append(clarification_metrics_row)
+
+            case_metrics_row = (
+                "     case_totals: "
+                f"time={case_time:.2f}s, "
+                f"tokens_in={case_input_tokens}, tokens_out={case_output_tokens}, "
+                f"cost=${case_cost:.4f}"
+            )
+            print(case_metrics_row)
+            output_lines.append(case_metrics_row)
+
         # Print Summary Table
         summary_header_sep = "\n" + "=" * 80
         summary_header = f"{'Category':<40} | {'Count':<6} | {'Router Acc':<12} | {'Baseline Acc'}"
@@ -213,10 +309,45 @@ def run_tests(test_turn: int, provider: str | None):
 
         output_lines.extend([overall_row, overall_footer])
 
-        est_cost = estimate_cost(llm_provider, total_input_tokens, total_output_tokens)
-        metrics_summary = f"Time: {total_time_sec:.2f}s | est_input_tokens: {total_input_tokens} | est_output_tokens: {total_output_tokens} | est_cost_usd: {est_cost:.4f} (rough)"
-        print(metrics_summary)
-        output_lines.append(metrics_summary)
+        def format_metric_line(label: str, data: Dict[str, float]) -> str:
+            count = data.get("count", 0)
+            total_cost = data.get("total_cost", 0.0)
+            total_cases = data.get("total_cases", count)
+
+            if count == 0:
+                avg_time = 0.0
+                avg_in = 0.0
+                avg_out = 0.0
+            else:
+                avg_time = data["total_time"] / count
+                avg_in = data["total_input_tokens"] / count
+                avg_out = data["total_output_tokens"] / count
+
+            avg_cost = total_cost / total_cases if total_cases else 0.0
+
+            return (
+                f"{label}: count={count}, avg_time={avg_time:.2f}s, "
+                f"avg_tokens_in={avg_in:.1f}, avg_tokens_out={avg_out:.1f}, "
+                f"avg_cost=${avg_cost:.4f}, total_cost=${total_cost:.4f}"
+            )
+
+        metrics_header = "\n" + "=" * 80 + "\nMETRIC AVERAGES" + "\n" + "-" * 80
+        print(metrics_header)
+        output_lines.append(metrics_header)
+
+        router_metrics_line = format_metric_line("Router", aggregated_metrics["router"])
+        clarification_metrics_line = format_metric_line("Clarification", aggregated_metrics["clarification"])
+        overall_metrics_line = format_metric_line("Overall", aggregated_metrics["overall"])
+
+        print(router_metrics_line)
+        print(clarification_metrics_line)
+        print(overall_metrics_line)
+
+        output_lines.extend([
+            router_metrics_line,
+            clarification_metrics_line,
+            overall_metrics_line,
+        ])
 
         # Save to file per provider
         if test_turn == 1:
