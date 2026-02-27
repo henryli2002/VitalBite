@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 import time
 import re
 from typing import Tuple
+from time import sleep
 
 NORMALIZE = re.compile(r'[^\w\s]')
 
@@ -213,32 +214,36 @@ Respond with a JSON object containing:
 - "confidence": float between 0.0 and 1.0
 - "reasoning": brief explanation of why this intent was chosen"""
 
-    try:
-        # Use vision if image is present to analyze image content
-        if image_data:
-            result = client.generate_structured(
-                prompt=routing_prompt,
-                schema=IntentAnalysis,
-                image_b64=image_data
-            )
-        else:
-            result = client.generate_structured(routing_prompt, IntentAnalysis)
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            if image_data:
+                result = client.generate_structured(
+                    prompt=routing_prompt,
+                    schema=IntentAnalysis,
+                    image_b64=image_data,
+                )
+            else:
+                result = client.generate_structured(routing_prompt, IntentAnalysis)
 
-        
-        return {
-            "analysis": {
-                "intent": result.intent,
-                "safety_safe": state.get("analysis", {}).get("safety_safe", True),
-                "safety_reason": state.get("analysis", {}).get("safety_reason")
+            return {
+                "analysis": {
+                    "intent": result.intent,
+                    "safety_safe": state.get("analysis", {}).get("safety_safe", True),
+                    "safety_reason": state.get("analysis", {}).get("safety_reason"),
+                }
             }
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            print(f"Intent routing failed on attempt {attempt + 1}: {e}")
+            if attempt < 2:
+                sleep(1)
+
+    print(f"Intent routing ultimately failed after retries: {last_error}")
+    return {
+        "analysis": {
+            "intent": "clarification",
+            "safety_safe": state.get("analysis", {}).get("safety_safe", True),
+            "safety_reason": state.get("analysis", {}).get("safety_reason"),
         }
-    except Exception as e:
-        # On error, default to clarification
-        print(f"Intent routing failed: {e}")
-        return {
-            "analysis": {
-                "intent": "clarification",
-                "safety_safe": state.get("analysis", {}).get("safety_safe", True),
-                "safety_reason": state.get("analysis", {}).get("safety_reason")
-            }
-        }
+    }

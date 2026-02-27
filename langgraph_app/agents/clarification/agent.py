@@ -1,12 +1,13 @@
 """Clarification agent for handling ambiguous or unclear inputs."""
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.utils import detect_language
 from langgraph_app.config import config
+from time import sleep
 
 
 def clarification_node(state: GraphState) -> GraphState:
@@ -21,13 +22,13 @@ def clarification_node(state: GraphState) -> GraphState:
     """
     state = state.copy()
     # ensure messages exists
-    state.setdefault("messages", [])
+    messages_list: List[Any] = state.setdefault("messages", [])  # type: ignore[assignment]
     client = get_llm_client()
     input_data = state.get("input", {})
     text = input_data.get("text", "")
     image_data = input_data.get("image_data")
     lang = detect_language(text)
-    messages = state.get("messages", [])
+    messages = messages_list
     history_text = ""
     if messages:
         history_count = config.get_history_count("clarification")
@@ -62,28 +63,37 @@ Generate a response based on the following rules:
 9. TONE: Stay helpful, professional, and safety-conscious.
 
 Keep the response concise (1-3 sentences)."""
-    try:
-        if not image_data:
-            final_response = client.generate_text(
-                prompt=clarification_prompt,
-                system_instruction="You are a professional food assistant. You handle unclear requests, safety concerns, and off-topic questions with helpfulness and strict adherence to your role."
-            )
-        else:
-            final_response = client.generate_vision(
-                image_b64=image_data,
-                prompt=clarification_prompt,
-                system_instruction="You are a professional food assistant. You handle unclear requests, safety concerns, and off-topic questions with helpfulness and strict adherence to your role."
-            )
-        state["final_response"] = final_response
-        state["messages"].append(AIMessage(content=final_response))
-        state["input"] = { "text": "", "image_data": None, "source": ""}
-        
-        
-    except Exception as e:
-        # Fallback response
+    final_response = ""
+    last_error: Exception | None = None
+
+    for attempt in range(3):
+        try:
+            if not image_data:
+                final_response = client.generate_text(
+                    prompt=clarification_prompt,
+                    system_instruction="You are a professional food assistant. You handle unclear requests, safety concerns, and off-topic questions with helpfulness and strict adherence to your role."
+                )
+            else:
+                final_response = client.generate_vision(
+                    image_b64=image_data,
+                    prompt=clarification_prompt,
+                    system_instruction="You are a professional food assistant. You handle unclear requests, safety concerns, and off-topic questions with helpfulness and strict adherence to your role."
+                )
+            break
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            print(f"Clarification generation failed on attempt {attempt + 1}: {e}")
+            if attempt < 2:
+                sleep(1)
+
+    if not final_response:
         fallback = "您好！我可以帮您识别食物图片或推荐餐厅。请告诉我您需要什么帮助，或者上传一张食物图片。" if lang == "Chinese" else "Hello! I can help you recognize food images or recommend restaurants. Please tell me what you need help with, or upload a food image."
-        state["final_response"] = fallback
-        state["messages"].append(AIMessage(content=fallback))
-        state["input"] = { "text": "", "image_data": None, "source": ""}
+        if last_error:
+            print(f"Clarification generation ultimately failed after retries: {last_error}")
+        final_response = fallback
+
+    state["final_response"] = final_response
+    messages_list.append(AIMessage(content=final_response))
+    state["input"] = { "text": "", "image_data": None, "source": ""}
 
     return state
