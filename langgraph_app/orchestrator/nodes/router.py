@@ -133,7 +133,7 @@ def intent_router_node(state: GraphState) -> GraphState:
     Returns:
         Updated state with intent analysis
     """
-    client = get_llm_client()
+    client = get_llm_client(module="router")
     input_data = state.get("input", {})
     text = input_data.get("text", "")
     image_data = input_data.get("image_data")

@@ -10,7 +10,7 @@ from langgraph_app.utils.openai_client import OpenAIClient
 from langgraph_app.utils.bedrock_claude_client import BedrockClaudeClient
 
 
-def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = None):
+def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = None, module: Optional[str] = None):
     """
     Return an LLM client instance based on provider/config.
 
@@ -22,11 +22,10 @@ def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = N
     selected = (provider or config.LLM_PROVIDER).lower()
 
     if selected == "gemini":
-        return GeminiClient(model_name=model_name)
+        return GeminiClient(model_name=model_name, module=module)
     if selected == "openai":
-        return OpenAIClient(model_name=model_name)
+        return OpenAIClient(model_name=model_name, module=module)
     if selected in {"bedrock", "bedrock_claude", "claude"}:
-        return BedrockClaudeClient(model_name=model_name)
+        return BedrockClaudeClient(model_name=model_name, module=module)
 
     raise ValueError(f"Unsupported LLM provider: {selected}")
-

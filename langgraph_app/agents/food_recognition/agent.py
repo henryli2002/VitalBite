@@ -20,7 +20,7 @@ def food_recognition_node(state: GraphState) -> GraphState:
     """
     state = state.copy()
     state.setdefault("messages", [])
-    client = get_llm_client()
+    client = get_llm_client(module="food_recognition")
     input_data = state.get("input", {})
     image_data = input_data.get("image_data")
     text = input_data.get("text", "")

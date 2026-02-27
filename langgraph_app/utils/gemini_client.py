@@ -21,7 +21,14 @@ T = TypeVar('T', bound=BaseModel)
 class GeminiClient:
     """Client for interacting with Google Gemini API using the new google-genai SDK."""
     
-    def __init__(self, model_name: str | None = None, temperature: float = 0.2):
+    def __init__(
+        self,
+        model_name: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        presence_penalty: float | None = None,
+        module: Optional[str] = None,
+    ):
         """
         Initialize Gemini client.
         
@@ -30,13 +37,21 @@ class GeminiClient:
         """
         if model_name is None:
             model_name = app_config.GEMINI_MODEL_NAME
+
+        sampling_params = app_config.get_sampling_params(app_config.LLM_PROVIDER, module)
+
+        self.temperature = temperature if temperature is not None else sampling_params["temperature"]
+        self.top_p = top_p if top_p is not None else sampling_params["top_p"]
+        self.presence_penalty = (
+            presence_penalty if presence_penalty is not None else sampling_params["presence_penalty"]
+        )
+
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not set")
-        
+
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
-        self.temperature = temperature
     
     def generate_text(
         self, 
@@ -57,10 +72,12 @@ class GeminiClient:
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=self.temperature,
+                top_p=self.top_p,
             )
         else:
             config = types.GenerateContentConfig(
                 temperature=self.temperature,
+                top_p=self.top_p,
             )
             
         response = self.client.models.generate_content(
@@ -95,10 +112,12 @@ class GeminiClient:
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=self.temperature,
+                top_p=self.top_p,
             )
         else:
             config = types.GenerateContentConfig(
                 temperature=self.temperature,
+                top_p=self.top_p,
             )
         
         response = self.client.models.generate_content(

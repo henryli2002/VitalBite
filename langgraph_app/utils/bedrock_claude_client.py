@@ -21,14 +21,31 @@ T = TypeVar("T", bound=BaseModel)
 class BedrockClaudeClient:
     """Client for interacting with Anthropic Claude on AWS Bedrock."""
 
-    def __init__(self, model_name: str | None = None, region_name: str | None = None, temperature: float = 0.2):
+    def __init__(
+        self,
+        model_name: str | None = None,
+        region_name: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        presence_penalty: float | None = None,
+        max_tokens: int | None = None,
+        module: Optional[str] = None,
+    ):
         if model_name is None:
             model_name = app_config.BEDROCK_CLAUDE_MODEL_NAME
 
         region = region_name or os.getenv("AWS_REGION") or "us-east-1"
 
+        sampling_params = app_config.get_sampling_params(app_config.LLM_PROVIDER, module)
+
+        self.temperature = temperature if temperature is not None else sampling_params["temperature"]
+        self.top_p = top_p if top_p is not None else sampling_params["top_p"]
+        self.presence_penalty = (
+            presence_penalty if presence_penalty is not None else sampling_params["presence_penalty"]
+        )
+        self._max_tokens = max_tokens if max_tokens is not None else app_config.BEDROCK_CLAUDE_MAX_TOKENS
+
         self.model_name = model_name
-        self.temperature = temperature
         self.client = boto3.client(
             "bedrock-runtime",
             region_name=region,
@@ -76,7 +93,12 @@ class BedrockClaudeClient:
         response = self.client.converse(
             modelId=self.model_name,
             messages=messages,
-            inferenceConfig={"maxTokens": 2048, "temperature": self.temperature},
+                        inferenceConfig={
+                "maxTokens": self._max_tokens,
+                "temperature": self.temperature,
+                "topP": self.top_p,
+                "stopSequences": [], # Bedrock does not support presence_penalty directly, topP handles similar intent
+            },
         )
 
         outputs = response.get("output", {}).get("message", {}).get("content", [])
@@ -94,7 +116,12 @@ class BedrockClaudeClient:
         response = self.client.converse(
             modelId=self.model_name,
             messages=messages,
-            inferenceConfig={"maxTokens": 2048, "temperature": self.temperature},
+                        inferenceConfig={
+                "maxTokens": self._max_tokens,
+                "temperature": self.temperature,
+                "topP": self.top_p,
+                "stopSequences": [], # Bedrock does not support presence_penalty directly, topP handles similar intent
+            },
         )
 
         outputs = response.get("output", {}).get("message", {}).get("content", [])
@@ -114,7 +141,12 @@ class BedrockClaudeClient:
         response = self.client.converse(
             modelId=self.model_name,
             messages=messages,
-            inferenceConfig={"maxTokens": 2048, "temperature": self.temperature},
+                        inferenceConfig={
+                "maxTokens": self._max_tokens,
+                "temperature": self.temperature,
+                "topP": self.top_p,
+                "stopSequences": [], # Bedrock does not support presence_penalty directly, topP handles similar intent
+            },
             additionalModelRequestFields={
                 "response_format": {"type": "json_object"}
             },

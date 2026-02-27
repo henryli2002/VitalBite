@@ -91,7 +91,7 @@ def food_recommendation_node(state: GraphState) -> GraphState:
     """
     state = state.copy()
     state.setdefault("messages", [])
-    client = get_llm_client()
+    client = get_llm_client(module="food_recommendation")
     input_data = state.get("input", {})
     text = input_data.get("text", "")
     

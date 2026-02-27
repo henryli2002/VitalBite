@@ -19,11 +19,26 @@ T = TypeVar("T", bound=BaseModel)
 class OpenAIClient:
     """Client for interacting with OpenAI Chat Completions (supports vision)."""
 
-    def __init__(self, model_name: str | None = None, temperature: float = 0.2):
+    def __init__(
+        self,
+        model_name: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        presence_penalty: float | None = None,
+        module: Optional[str] = None,
+    ):
         """Initialize OpenAI client."""
 
         if model_name is None:
             model_name = app_config.OPENAI_MODEL_NAME
+
+        sampling_params = app_config.get_sampling_params(app_config.LLM_PROVIDER, module)
+
+        self.temperature = temperature if temperature is not None else sampling_params["temperature"]
+        self.top_p = top_p if top_p is not None else sampling_params["top_p"]
+        self.presence_penalty = (
+            presence_penalty if presence_penalty is not None else sampling_params["presence_penalty"]
+        )
 
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -31,7 +46,6 @@ class OpenAIClient:
 
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
-        self.temperature = temperature
 
     def generate_text(
         self,
@@ -50,6 +64,8 @@ class OpenAIClient:
             model=self.model_name,
             messages=messages,
             temperature=self.temperature,
+            top_p=self.top_p,
+            presence_penalty=self.presence_penalty,
         )
 
         return response.choices[0].message.content or ""
@@ -85,6 +101,8 @@ class OpenAIClient:
             model=self.model_name,
             messages=messages,
             temperature=self.temperature,
+            top_p=self.top_p,
+            presence_penalty=self.presence_penalty,
         )
 
         return response.choices[0].message.content or ""
