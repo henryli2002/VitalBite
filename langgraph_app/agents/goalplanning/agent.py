@@ -10,6 +10,10 @@ from langgraph_app.config import config
 from time import sleep
 
 
+from langgraph_app.utils.utils import detect_language, get_images_from_history
+
+...
+
 def goalplanning_node(state: GraphState) -> GraphState:
     """
     Generate a helpful response to user questions about goal planning.
@@ -26,7 +30,6 @@ def goalplanning_node(state: GraphState) -> GraphState:
     client = get_llm_client(module="goalplanning")
     input_data = state.get("input", {})
     text = input_data.get("text", "")
-    image_data = input_data.get("image_data")
     lang = detect_language(text)
     messages = messages_list
     history_text = ""
@@ -43,18 +46,24 @@ def goalplanning_node(state: GraphState) -> GraphState:
                     role = "User"
             history_text += f"{role}: {content}\n"
 
-    goalplanning_prompt = f"""The user is asking about diet planning, nutrition, or setting eating goals.
+    images_to_process = get_images_from_history(messages)
+
+    image_prompt_part = ""
+    if images_to_process:
+        image_prompt_part = f"The user has provided {len(images_to_process)} images in a previous message. These images may represent past meals that should be considered as part of their eating history."
+
+    goalplanning_prompt = f"""The user wants to create a diet plan or set nutritional goals. Your role is to be a supportive nutritional assistant.
 
 Conversation History:
 {history_text}
 
 Current User input: {text}
-Has image: {"Yes" if image_data else "No"}
+{image_prompt_part}
 
 Generate a response based on the following rules:
-1.  If the user asks for nutritional information, provide it clearly and concisely.
-2.  If the user wants to set a dietary goal, help them define it and offer encouragement.
-3.  Provide healthy eating tips and suggestions when appropriate.
+1.  Focus on long-term planning. Help the user define their goals (e.g., weight loss, muscle gain, balanced diet).
+2.  Incorporate the user's history. This includes previous meals (which may be in the images), stated preferences, and personal data like weight or activity level if provided.
+3.  Provide actionable suggestions. Instead of just giving information, suggest concrete plans, meal ideas, or next steps.
 4.  Do not give medical advice. If the user asks for medical advice, gently decline and suggest they consult a doctor.
 5.  LANGUAGE: Use the same language as the user input (e.g., English or Chinese).
 6.  TONE: Stay encouraging, supportive, and informative.
@@ -65,14 +74,14 @@ Keep the response concise (2-4 sentences)."""
 
     for attempt in range(3):
         try:
-            if not image_data:
+            if not images_to_process:
                 final_response = client.generate_text(
                     prompt=goalplanning_prompt,
                     system_instruction="You are a nutritional assistant helping users plan their diet and eating goals. Do not provide medical advice."
                 )
             else:
                 final_response = client.generate_vision(
-                    image_b64=image_data[0],
+                    images_b64=images_to_process,
                     prompt=goalplanning_prompt,
                     system_instruction="You are a nutritional assistant helping users plan their diet and eating goals. Do not provide medical advice."
                 )

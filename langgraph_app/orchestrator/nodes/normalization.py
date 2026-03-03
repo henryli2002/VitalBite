@@ -34,6 +34,10 @@ def normalize_input_node(state: GraphState) -> GraphState:
                 image_url = block.get("image_url", {}).get("url", "")
                 if "base64," in image_url:
                     image_blocks.append(image_url.split("base64,")[1])
+            elif block.get("type") == "image" and block.get("source_type") == "base64":
+                # Original format
+                if block.get("data"):
+                    image_blocks.append(block.get("data"))
 
         text = " ".join(text_blocks).strip()
         if image_blocks:

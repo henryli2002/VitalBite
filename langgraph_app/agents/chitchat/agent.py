@@ -10,6 +10,10 @@ from langgraph_app.config import config
 from time import sleep
 
 
+from langgraph_app.utils.utils import detect_language, get_images_from_history
+
+...
+
 def chitchat_node(state: GraphState) -> GraphState:
     """
     Generate a friendly response for general conversation.
@@ -26,7 +30,6 @@ def chitchat_node(state: GraphState) -> GraphState:
     client = get_llm_client(module="chitchat")
     input_data = state.get("input", {})
     text = input_data.get("text", "")
-    image_data = input_data.get("image_data")
     lang = detect_language(text)
     messages = messages_list
     history_text = ""
@@ -43,13 +46,19 @@ def chitchat_node(state: GraphState) -> GraphState:
                     role = "User"
             history_text += f"{role}: {content}\n"
 
+    images_to_process = get_images_from_history(messages)
+
+    image_prompt_part = ""
+    if images_to_process:
+        image_prompt_part = f"The user has provided {len(images_to_process)} images in a previous message. They may be referring to these images in their current message. The images are provided in order."
+
     chitchat_prompt = f"""The user is engaging in general conversation. Context is provided below.
 
 Conversation History:
 {history_text}
 
 Current User input: {text}
-Has image: {"Yes" if image_data else "No"}
+{image_prompt_part}
 
 Generate a response based on the following rules:
 1.  If the user's input is unclear, ambiguous, or provides a blurry/non-food image, politely ask for clarification.
@@ -64,14 +73,14 @@ Keep the response concise (1-3 sentences)."""
 
     for attempt in range(3):
         try:
-            if not image_data:
+            if not images_to_process:
                 final_response = client.generate_text(
                     prompt=chitchat_prompt,
                     system_instruction="You are a friendly and helpful food assistant. You are having a general conversation with the user."
                 )
             else:
                 final_response = client.generate_vision(
-                    image_b64=image_data[0],
+                    images_b64=images_to_process,
                     prompt=chitchat_prompt,
                     system_instruction="You are a friendly and helpful food assistant. You are having a general conversation with the user."
                 )

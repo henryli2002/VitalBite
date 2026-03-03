@@ -8,6 +8,8 @@ from langchain_core.messages import AIMessage
 from langgraph_app.utils.utils import detect_language
 from langgraph_app.config import config
 
+from langgraph_app.utils.utils import detect_language, get_images_from_history
+
 def food_recognition_node(state: GraphState) -> GraphState:
     """
     Recognize foods from image and provide nutritional information.
@@ -22,19 +24,19 @@ def food_recognition_node(state: GraphState) -> GraphState:
     state.setdefault("messages", [])
     client = get_llm_client(module="food_recognition")
     input_data = state.get("input", {})
-    image_data = input_data.get("image_data")
     text = input_data.get("text", "")
-
+    messages = state.get("messages", [])
     lang = detect_language(text)
     
-    if not image_data:
+    images_to_process = get_images_from_history(messages)
+    
+    if not images_to_process:
         state["recognition_result"] = None
         state["final_response"] = "抱歉，未检测到图像数据，无法进行食物识别。" if lang == "Chinese" else "Sorry, no image data detected for food recognition."
         state["messages"].append(AIMessage(content=state["final_response"]))
         return state
     
     # Construct vision prompt for food recognition
-    messages = state.get("messages", [])
     history_text = ""
     if messages:
         history_count = config.get_history_count("recognition")
@@ -49,7 +51,7 @@ def food_recognition_node(state: GraphState) -> GraphState:
                     role = "User"
             history_text += f"{role}: {content}\n"
 
-    vision_prompt = f"""Analyze this image and identify all food items present, considering any relevant conversation history.
+    vision_prompt = f"""Analyze the provided image(s) and identify all food items present, considering any relevant conversation history. If multiple images are provided, analyze the food items in all of them.
 
 Conversation History:
 {history_text}
@@ -86,8 +88,8 @@ Use the following guidelines:
             "Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."
         )
         response_text = client.generate_vision(
-            image_data,
-            vision_prompt,
+            images_b64=images_to_process,
+            prompt=vision_prompt,
             system_instruction=system_instruction,
         )
         

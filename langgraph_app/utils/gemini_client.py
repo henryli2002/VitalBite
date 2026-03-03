@@ -4,7 +4,7 @@ import os
 import json
 import base64
 import io
-from typing import Optional, Type, TypeVar
+from typing import Optional, Type, TypeVar, List, Any
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -89,7 +89,7 @@ class GeminiClient:
     
     def generate_vision(
         self, 
-        image_b64: str, 
+        images_b64: List[str], 
         prompt: str,
         system_instruction: Optional[str] = None
     ) -> str:
@@ -97,17 +97,20 @@ class GeminiClient:
         Generate response from image and text prompt (multimodal).
         
         Args:
-            image_b64: Base64 encoded image string
+            images_b64: List of Base64 encoded image strings
             prompt: Text prompt describing what to do with the image
             system_instruction: Optional system instruction
             
         Returns:
             Generated text response
         """
-        # Decode base64 image
-        image_data = base64.b64decode(image_b64)
-        image = Image.open(io.BytesIO(image_data))
         
+        contents: List[Any] = [prompt]
+        for image_b64 in images_b64:
+            image_data = base64.b64decode(image_b64)
+            image = Image.open(io.BytesIO(image_data))
+            contents.append(image)
+
         if system_instruction:
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -122,7 +125,7 @@ class GeminiClient:
         
         response = self.client.models.generate_content(
             model=self.model_name,
-            contents=[prompt, image],
+            contents=contents,
             config=config,
         )
         return response.text or ""
@@ -131,7 +134,7 @@ class GeminiClient:
         self,
         prompt: str, 
         schema: Type[T],
-        image_b64: Optional[str] = None,
+        images_b64: Optional[List[str]] = None,
         system_instruction: Optional[str] = None
     ) -> T:
         """
@@ -140,6 +143,7 @@ class GeminiClient:
         Args:
             prompt: User prompt
             schema: Pydantic BaseModel class to structure the output
+            images_b64: Optional list of Base64 encoded image strings
             system_instruction: Optional system instruction
             
         Returns:
@@ -151,13 +155,13 @@ class GeminiClient:
             system_instruction=system_instruction,
             temperature=self.temperature,
         )
-        if image_b64:
-            # Decode base64 image
-            image_data = base64.b64decode(image_b64)
-            image = Image.open(io.BytesIO(image_data))
-            contents = [prompt, image]
-        else:
-            contents = prompt
+        
+        contents: List[Any] = [prompt]
+        if images_b64:
+            for image_b64 in images_b64:
+                image_data = base64.b64decode(image_b64)
+                image = Image.open(io.BytesIO(image_data))
+                contents.append(image)
 
         response = self.client.models.generate_content(
             model=self.model_name,

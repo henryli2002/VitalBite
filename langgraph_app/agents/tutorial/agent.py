@@ -10,6 +10,10 @@ from langgraph_app.config import config
 from time import sleep
 
 
+from langgraph_app.utils.utils import detect_language, get_images_from_history
+
+...
+
 def tutorial_node(state: GraphState) -> GraphState:
     """
     Generate a helpful response to user questions about the app.
@@ -26,7 +30,6 @@ def tutorial_node(state: GraphState) -> GraphState:
     client = get_llm_client(module="tutorial")
     input_data = state.get("input", {})
     text = input_data.get("text", "")
-    image_data = input_data.get("image_data")
     lang = detect_language(text)
     messages = messages_list
     history_text = ""
@@ -43,18 +46,24 @@ def tutorial_node(state: GraphState) -> GraphState:
                     role = "User"
             history_text += f"{role}: {content}\n"
 
-    tutorial_prompt = f"""The user is asking for instructions or help with the app. Context is provided below.
+    images_to_process = get_images_from_history(messages)
+
+    image_prompt_part = ""
+    if images_to_process:
+        image_prompt_part = f"The user has provided {len(images_to_process)} images in a previous message. They may be referring to these images in their current message. The images are provided in order."
+
+    tutorial_prompt = f"""The user needs help with the app. This might be an explicit request for instructions, or it might be inferred because they tried to do something but failed (e.g., asking for image recognition without providing an image).
 
 Conversation History:
 {history_text}
 
 Current User input: {text}
-Has image: {"Yes" if image_data else "No"}
+{image_prompt_part}
 
 Generate a response based on the following rules:
-1.  If the user asks how to use the app, explain the core features (food recognition, restaurant recommendation, goal planning).
-2.  If the user asks about a specific feature, provide a clear and concise explanation of how it works.
-3.  If the input is unclear, ask for clarification about what they need help with.
+1.  If the user seems to be stuck or missing information for a task, provide a specific, helpful tip. For example, if they ask for image analysis without an image, tell them they need to upload an image first.
+2.  If the user asks a general question about how to use the app, explain the core features (food recognition, restaurant recommendation, goal planning).
+3.  If the user asks about a specific feature, provide a clear and concise explanation of how it works.
 4.  LANGUAGE: Use the same language as the user input (e.g., English or Chinese).
 5.  TONE: Stay helpful, professional, and patient.
 
@@ -64,14 +73,14 @@ Keep the response concise (2-4 sentences)."""
 
     for attempt in range(3):
         try:
-            if not image_data:
+            if not images_to_process:
                 final_response = client.generate_text(
                     prompt=tutorial_prompt,
                     system_instruction="You are a helpful assistant explaining how to use the food analysis and recommendation app."
                 )
             else:
                 final_response = client.generate_vision(
-                    image_b64=image_data[0],
+                    images_b64=images_to_process,
                     prompt=tutorial_prompt,
                     system_instruction="You are a helpful assistant explaining how to use the food analysis and recommendation app."
                 )
