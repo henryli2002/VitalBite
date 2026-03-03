@@ -9,13 +9,13 @@ from langgraph.graph.message import add_messages
 class AgentInput(TypedDict):
     """Input data from user or external source."""
     text: str
-    image_data: Optional[str]  # Base64 string
+    image_data: Optional[List[str]]  # List of Base64 strings
     source: str  # e.g., "user", "studio"
 
 
 class AnalysisData(TypedDict):
     """Analysis results from guardrail and routing."""
-    intent: Literal["recognition", "recommendation", "clarification", "exit"]
+    intent: Literal["recognition", "recommendation", "exit", "chitchat", "tutorial", "guardrails", "goalplanning"]
     safety_safe: bool
     safety_reason: Optional[str]
 

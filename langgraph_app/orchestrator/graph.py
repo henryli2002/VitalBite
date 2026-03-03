@@ -8,7 +8,10 @@ from langgraph_app.orchestrator.nodes.guardrail import global_guardrail_node
 from langgraph_app.orchestrator.nodes.router import intent_router_node
 from langgraph_app.agents.food_recognition.agent import food_recognition_node
 from langgraph_app.agents.food_recommendation.agent import food_recommendation_node
-from langgraph_app.agents.clarification.agent import clarification_node
+from langgraph_app.agents.chitchat.agent import chitchat_node
+from langgraph_app.agents.tutorial.agent import tutorial_node
+from langgraph_app.agents.guardrails.agent import guardrails_node
+from langgraph_app.agents.goalplanning.agent import goalplanning_node
 
 
 
@@ -28,7 +31,7 @@ def should_continue_after_guardrail(state: GraphState) -> Literal["unsafe", "saf
     return "safe"
 
 
-def route_by_intent(state: GraphState) -> Literal["recognition", "recommendation", "clarification", "exit"]:
+def route_by_intent(state: GraphState) -> Literal["recognition", "recommendation", "exit", "chitchat", "tutorial", "guardrails", "goalplanning"]:
     """
     Condition function: Route to appropriate agent based on intent.
     
@@ -59,7 +62,10 @@ def create_graph() -> StateGraph:
     workflow.add_node("router", intent_router_node)
     workflow.add_node("recognition", food_recognition_node)
     workflow.add_node("recommendation", food_recommendation_node)
-    workflow.add_node("clarification", clarification_node)
+    workflow.add_node("chitchat", chitchat_node)
+    workflow.add_node("tutorial", tutorial_node)
+    workflow.add_node("guardrails", guardrails_node)
+    workflow.add_node("goalplanning", goalplanning_node)
     
     # Define workflow edges
     # START -> normalize
@@ -85,17 +91,21 @@ def create_graph() -> StateGraph:
         {
             "recognition": "recognition",
             "recommendation": "recommendation",
-            "clarification": "clarification",
+            "chitchat": "chitchat",
+            "tutorial": "tutorial",
+            "guardrails": "guardrails",
+            "goalplanning": "goalplanning",
             "exit": END
         }
     )
 
-    # clarification -> END (wait for next input)
-    workflow.add_edge("clarification", END)
-    
     # All agent nodes -> END
     workflow.add_edge("recognition", END)
     workflow.add_edge("recommendation", END)
+    workflow.add_edge("chitchat", END)
+    workflow.add_edge("tutorial", END)
+    workflow.add_edge("guardrails", END)
+    workflow.add_edge("goalplanning", END)
     
     return workflow.compile()
 

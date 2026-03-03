@@ -22,16 +22,22 @@ def normalize_input_node(state: GraphState) -> GraphState:
         text = content.strip()
     elif isinstance(content, list):
         text_blocks = []
+        image_blocks = []
         for block in content:
             if not isinstance(block, dict):
                 continue
 
             if block.get("type") == "text":
                 text_blocks.append(block.get("text", ""))
-            elif block.get("type") == "image" and block.get("source_type") == "base64":
-                image_data = block.get("data")
+            elif block.get("type") == "image_url":
+                # Assumes base64 format like "data:image/jpeg;base64,{b64_string}"
+                image_url = block.get("image_url", {}).get("url", "")
+                if "base64," in image_url:
+                    image_blocks.append(image_url.split("base64,")[1])
 
         text = " ".join(text_blocks).strip()
+        if image_blocks:
+            image_data = image_blocks
 
     state["input"] = {
         "text": text,
