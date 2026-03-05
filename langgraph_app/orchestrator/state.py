@@ -6,13 +6,6 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
 
-class AgentInput(TypedDict):
-    """Input data from user or external source."""
-    text: str
-    image_data: Optional[List[str]]  # List of Base64 strings
-    source: str  # e.g., "user", "studio"
-
-
 class AnalysisData(TypedDict):
     """Analysis results from guardrail and routing."""
     intent: Literal["recognition", "recommendation", "exit", "chitchat", "tutorial", "guardrails", "goalplanning"]
@@ -22,9 +15,6 @@ class AnalysisData(TypedDict):
 
 class GraphState(TypedDict, total=False):
     """Main state structure for the LangGraph workflow."""
-    # Input layer
-    input: AgentInput
-    
     # Context layer
     patient_id: Optional[str]
     session_id: str
@@ -38,6 +28,9 @@ class GraphState(TypedDict, total=False):
     
     # Output layer
     final_response: str
+    
+    # Debug logging
+    debug_logs: List[dict]
     
     # Message history (LangGraph standard)
     messages: Annotated[List[AnyMessage], add_messages]

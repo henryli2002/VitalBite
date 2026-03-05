@@ -4,18 +4,21 @@ from typing import Dict, Any, List
 import json
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
-from pydantic import BaseModel
-from langchain_core.messages import AIMessage
-from langgraph_app.config import config
+from pydantic import BaseModel, Field
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph_app.utils.utils import (
+    detect_language,
+    get_current_user_text,
+)
 
 
 class RecommendationQuery(BaseModel):
     """Structured query parameters for recommendations."""
     location: str | None = None
     radius_km: float | None = None
-    cuisine_type: str | None = None
-    dietary_restrictions: List[str] = []
-    price_range: str | None = None  # e.g., "budget", "moderate", "expensive"
+    cuisine_type: str | None = Field(description="cuisine type or null. If an image of food is provided, infer the cuisine from it.")
+    dietary_restrictions: List[str] = Field(default_factory=list)
+    price_range: str | None = Field(description="budget|moderate|expensive or null")
 
 
 def _get_restaurants_mock(
@@ -25,16 +28,6 @@ def _get_restaurants_mock(
 ) -> List[Dict[str, Any]]:
     """
     Mock function to simulate restaurant search.
-    
-    In production, this would call Google Maps API or similar service.
-    
-    Args:
-        location: Location string
-        cuisine_type: Type of cuisine
-        dietary_restrictions: List of dietary restrictions
-        
-    Returns:
-        List of restaurant dictionaries
     """
     # Mock restaurant data
     mock_restaurants = [
@@ -82,55 +75,28 @@ def _get_restaurants_mock(
 def food_recommendation_node(state: GraphState) -> GraphState:
     """
     Provide restaurant and food recommendations based on user query.
-    
-    Args:
-        state: Current graph state
-        
-    Returns:
-        Updated state with recommendation results and final response
     """
     state = state.copy()
-    state.setdefault("messages", [])
+    messages = state.setdefault("messages", [])
     client = get_llm_client(module="food_recommendation")
-    input_data = state.get("input", {})
-    text = input_data.get("text", "")
-    
-    # Step 1: Extract query parameters
-    messages = state.get("messages", [])
-    history_text = ""
-    if messages:
-        history_count = config.get_history_count("recommendation")
-        relevant_msgs = messages[-history_count:-1] if len(messages) > 1 else []
-        for msg in relevant_msgs:
-            role = "User"
-            content = str(msg.content)
-            if hasattr(msg, "type"):
-                if msg.type == "ai":
-                    role = "AI"
-                elif msg.type == "human":
-                    role = "User"
-            history_text += f"{role}: {content}\n"
 
-    extraction_prompt = f"""Extract recommendation parameters from the user's query, considering the conversation history context.
+    current_text = get_current_user_text(messages)
+    lang = detect_language(current_text)
 
-Conversation History:
-{history_text}
+    extraction_prompt = f"""Extract recommendation parameters from the user's query, considering the conversation history and any images provided. An image might give clues about the desired cuisine.
 
-Current User Query: {text}
-
-Extract the following information and respond in JSON format:
-{{
-    "location": "location string or null",
-    "radius_km": number or null,
-    "cuisine_type": "cuisine type or null",
-    "dietary_restrictions": ["list", "of", "restrictions"],
-    "price_range": "budget|moderate|expensive or null"
-}}
-
-Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."""
+Your response must be a JSON object with the requested schema. Ensure your response understands the user's language ('{lang}')."""
 
     try:
-        query_params = client.generate_structured(extraction_prompt, RecommendationQuery)
+        # Step 1: Use local messages to append extraction instruction
+        local_messages = messages.copy()
+        local_messages.append(HumanMessage(content=extraction_prompt))
+
+        query_params = client.generate_structured(
+            messages=local_messages, 
+            schema=RecommendationQuery,
+            system_prompt="You are an expert food recommendation assistant."
+        )
         
         # Step 2: Get restaurant recommendations (mock for now)
         restaurants = _get_restaurants_mock(
@@ -141,45 +107,45 @@ Always respond in the same language as the user (Chinese if Chinese detected, ot
         
         if not restaurants:
             state["recommendation_result"] = {"restaurants": []}
-            state["final_response"] = "抱歉，没有找到符合您要求的餐厅。请尝试调整搜索条件。"
+            state["final_response"] = "抱歉，没有找到符合您要求的餐厅。请尝试调整搜索条件。" if lang == "Chinese" else "Sorry, no matching restaurants were found. Please try adjusting your search criteria."
+            messages.append(AIMessage(content=state["final_response"]))
             return state
         
         # Step 3: Format recommendations into natural language
-        formatting_prompt = f"""Convert this restaurant list into a friendly, natural language recommendation.
+        formatting_prompt = f"""Convert this restaurant list into a friendly, natural language recommendation based on the user's query.
 
 Restaurants:
 {json.dumps(restaurants, ensure_ascii=False, indent=2)}
 
-User's original query: {text}
-
 Provide a warm, helpful response that:
-1. Acknowledges the user's request
-2. Lists the recommended restaurants with key details
-3. Mentions why each restaurant might be a good fit
-4. Keeps it concise and friendly
-
-Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."""
+1. Acknowledges the user's request.
+2. Lists the recommended restaurants with key details.
+3. Mentions why each restaurant might be a good fit.
+4. Keeps it concise and friendly.
+"""
 
         system_instruction = (
-            "You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions. "
-            "Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."
+            f"You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions. Your entire response must be in {lang}."
         )
-        final_response = client.generate_text(
-            formatting_prompt,
-            system_instruction=system_instruction,
+        
+        local_messages_2 = messages.copy()
+        local_messages_2.append(HumanMessage(content=formatting_prompt))
+
+        final_response = client.generate(
+            messages=local_messages_2,
+            system_prompt=system_instruction,
         )
+        
         state["recommendation_result"] = {
             "restaurants": restaurants,
             "query_params": query_params.model_dump()
         }
         state["final_response"] = final_response
-        state["messages"].append(AIMessage(content=final_response))
+        messages.append(AIMessage(content=final_response))
         return state
-
 
     except Exception as e:
         state["recommendation_result"] = None
         state["final_response"] = f"抱歉，推荐过程中出现错误：{str(e)}"
-        state["messages"].append(AIMessage(content=state["final_response"]))
+        messages.append(AIMessage(content=state["final_response"]))
         return state
-        

@@ -1,148 +1,92 @@
 """Food recognition agent for identifying foods from images."""
 
-from typing import Dict, Any
 import json
+from typing import Dict, Any, List
+from pydantic import BaseModel, Field
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
-from langchain_core.messages import AIMessage
-from langgraph_app.utils.utils import detect_language
-from langgraph_app.config import config
+from langgraph_app.utils.utils import (
+    detect_language,
+    get_current_user_text,
+)
+from langchain_core.messages import AIMessage, HumanMessage
 
-from langgraph_app.utils.utils import detect_language, get_images_from_history
+class FoodItem(BaseModel):
+    name: str = Field(description="food item name")
+    estimated_weight_grams: float = Field(description="estimated weight in grams")
+    estimated_calories: float = Field(description="estimated calories")
+    confidence: float = Field(description="confidence between 0.0-1.0")
+
+class NutritionData(BaseModel):
+    total_calories: float = Field(description="total calories")
+    total_protein_grams: float = Field(description="total protein in grams")
+    total_carbs_grams: float = Field(description="total carbohydrates in grams")
+    total_fat_grams: float = Field(description="total fat in grams")
+    health_score: float = Field(description="health score 0.0-10.0 (10 is very healthy)")
+
+class RecognitionResult(BaseModel):
+    foods: List[FoodItem]
+    nutrition: NutritionData
+    health_assessment: str = Field(description="brief text assessment of the meal's healthiness")
 
 def food_recognition_node(state: GraphState) -> GraphState:
     """
     Recognize foods from image and provide nutritional information.
-    
-    Args:
-        state: Current graph state
-        
-    Returns:
-        Updated state with recognition results and final response
     """
     state = state.copy()
-    state.setdefault("messages", [])
+    messages = state.setdefault("messages", [])
     client = get_llm_client(module="food_recognition")
-    input_data = state.get("input", {})
-    text = input_data.get("text", "")
-    messages = state.get("messages", [])
-    lang = detect_language(text)
-    
-    images_to_process = get_images_from_history(messages)
-    
-    if not images_to_process:
-        state["recognition_result"] = None
-        state["final_response"] = "抱歉，未检测到图像数据，无法进行食物识别。" if lang == "Chinese" else "Sorry, no image data detected for food recognition."
-        state["messages"].append(AIMessage(content=state["final_response"]))
-        return state
-    
-    # Construct vision prompt for food recognition
-    history_text = ""
-    if messages:
-        history_count = config.get_history_count("recognition")
-        relevant_msgs = messages[-history_count:-1] if len(messages) > 1 else []
-        for msg in relevant_msgs:
-            role = "User"
-            content = str(msg.content)
-            if hasattr(msg, "type"):
-                if msg.type == "ai":
-                    role = "AI"
-                elif msg.type == "human":
-                    role = "User"
-            history_text += f"{role}: {content}\n"
 
-    vision_prompt = f"""Analyze the provided image(s) and identify all food items present, considering any relevant conversation history. If multiple images are provided, analyze the food items in all of them.
+    current_text = get_current_user_text(messages)
+    lang = detect_language(current_text)
 
-Conversation History:
-{history_text}
-
-User query: {text}
-
-Please provide a detailed analysis in JSON format with the following structure:
-{{
-    "foods": [
-        {{
-            "name": "food item name",
-            "estimated_weight_grams": number,
-            "estimated_calories": number,
-            "confidence": float (0.0-1.0)
-        }}
-    ],
-    "nutrition": {{
-        "total_calories": number,
-        "total_protein_grams": number,
-        "total_carbs_grams": number,
-        "total_fat_grams": number,
-        "health_score": float (0.0-10.0, where 10 is very healthy)
-    }},
-    "health_assessment": "brief text assessment of the meal's healthiness"
-}}
-Use the following guidelines:
-- Be as accurate as possible with estimates. If you cannot identify certain items, mark confidence as low.
-- Use same language as user input for any text in the response."""
+    # Instead of parse_content_for_llm, we just let the LLM see the `messages`.
+    # But we want to ensure it focuses on extracting data from the image.
+    system_instruction = (
+        "You are a nutrition expert. Analyze the latest food images provided by the user in the conversation and provide accurate nutritional information."
+    )
 
     try:
-        # Use vision generation
-        system_instruction = (
-            "You are a nutrition expert. Analyze food images and provide accurate nutritional information. "
-            "Always respond in the same language as the user (Chinese if Chinese detected, otherwise English)."
-        )
-        response_text = client.generate_vision(
-            images_b64=images_to_process,
-            prompt=vision_prompt,
-            system_instruction=system_instruction,
+        # Step 1: Extract structured data from the images in the conversation
+        recognition_data_obj = client.generate_structured(
+            messages=messages,
+            schema=RecognitionResult,
+            system_prompt=system_instruction,
         )
         
-        # Try to parse JSON from response
-        # The response might be wrapped in markdown code blocks
-        json_text = response_text.strip()
-        if json_text.startswith("```"):
-            # Extract JSON from code block
-            lines = json_text.split("\n")
-            json_text = "\n".join([line for line in lines if not line.strip().startswith("```")])
+        recognition_data = recognition_data_obj.model_dump()
         
-        recognition_data = json.loads(json_text)
+        # Step 2: Create a natural language response
+        final_prompt = f"""You are a helpful nutrition assistant. Your task is to interpret the following nutritional analysis data and answer the user's query in a conversational and easy-to-understand way.
+
+Nutritional Analysis (JSON):
+{json.dumps(recognition_data, indent=2)}
+
+Guidelines:
+- **Language**: Your entire response must be in the same language as the user's query, which is '{lang}'.
+- **Synthesize, Don't Just Repeat**: Do not just list the data. Explain what it means in response to the user's question.
+- **Address the Query**: If the user asks a specific question, answer it directly.
+- **Summarize if General**: If the user's query is general, provide a summary of the key findings from the analysis, including the health assessment.
+
+Provide only the natural language response."""
+
+        # Use a local copy of messages to append the instructions without saving to state
+        local_messages = messages.copy()
+        local_messages.append(HumanMessage(content=final_prompt))
+
+        final_response = client.generate(
+            messages=local_messages,
+            system_prompt="You are a helpful nutrition assistant."
+        )
         
-        # Format natural language response
-        foods_list = recognition_data.get("foods", [])
-        nutrition = recognition_data.get("nutrition", {})
-        health_assessment = recognition_data.get("health_assessment", "")
-        
-        response_parts = ["我识别到以下食物：\n"] if lang == "Chinese" else ["I have identified the following foods:\n"]
-        for food in foods_list:
-            name = food.get("name", "未知食物" if lang == "Chinese" else "Unknown food")
-            weight = food.get("estimated_weight_grams", 0)
-            calories = food.get("estimated_calories", 0)
-            if lang == "Chinese":
-                response_parts.append(f"- {name}: 约 {weight}g, {calories} 卡路里")
-            else:
-                response_parts.append(f"- {name}: approximately {weight}g, {calories} calories")
-        
-        response_parts.append(f"\n营养总览：" if lang == "Chinese" else "\nNutrition Overview:")
-        response_parts.append(f"- 总卡路里: {nutrition.get('total_calories', 0)}" if lang == "Chinese" else f"- Total Calories: {nutrition.get('total_calories', 0)}")
-        response_parts.append(f"- 蛋白质: {nutrition.get('total_protein_grams', 0)}g" if lang == "Chinese" else f"- Protein: {nutrition.get('total_protein_grams', 0)}g")
-        response_parts.append(f"- 碳水化合物: {nutrition.get('total_carbs_grams', 0)}g" if lang == "Chinese" else f"- Carbohydrates: {nutrition.get('total_carbs_grams', 0)}g")
-        response_parts.append(f"- 脂肪: {nutrition.get('total_fat_grams', 0)}g" if lang == "Chinese" else f"- Fat: {nutrition.get('total_fat_grams', 0)}g")
-        response_parts.append(f"- 健康评分: {nutrition.get('health_score', 0)}/10" if lang == "Chinese" else f"- Health Score: {nutrition.get('health_score', 0)}/10")
-        
-        if health_assessment:
-            response_parts.append(f"\n健康评估: {health_assessment}" if lang == "Chinese" else f"\nHealth Assessment: {health_assessment}")
-        
-        final_response = "\n".join(response_parts)
         state["recognition_result"] = recognition_data
         state["final_response"] = final_response
-        state["messages"].append(AIMessage(content=final_response))
-        
-        return state
-        
-    except json.JSONDecodeError as e:
-        # If JSON parsing fails, use the raw response
-        state["recognition_result"] = None
-        state["final_response"] = f"抱歉，无法解析识别结果：{str(e)}。系统回复内容：{response_text}" if lang == "Chinese" else f"Sorry, unable to parse recognition result: {str(e)}. System response: {response_text}"
-        state["messages"].append(AIMessage(content=state["final_response"]))
-        return state
+        messages.append(AIMessage(content=final_response))
+
     except Exception as e:
+        print(f"Error in food recognition node: {e}")
         state["recognition_result"] = None
         state["final_response"] = f"抱歉，食物识别过程中出现错误：{str(e)}" if lang == "Chinese" else f"Sorry, an error occurred during food recognition: {str(e)}"
-        state["messages"].append(AIMessage(content=state["final_response"]))
-        return state
+        messages.append(AIMessage(content=state["final_response"]))
+
+    return state

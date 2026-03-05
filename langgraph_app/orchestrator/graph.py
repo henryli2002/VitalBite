@@ -3,7 +3,6 @@
 from typing import Literal
 from langgraph.graph import StateGraph, END
 from langgraph_app.orchestrator.state import GraphState
-from langgraph_app.orchestrator.nodes.normalization import normalize_input_node
 from langgraph_app.orchestrator.nodes.guardrail import global_guardrail_node
 from langgraph_app.orchestrator.nodes.router import intent_router_node
 from langgraph_app.agents.food_recognition.agent import food_recognition_node
@@ -57,7 +56,6 @@ def create_graph() -> StateGraph:
     workflow = StateGraph(GraphState)
     
     # Add nodes
-    workflow.add_node("normalize", normalize_input_node)
     workflow.add_node("guardrail", global_guardrail_node)
     workflow.add_node("router", intent_router_node)
     workflow.add_node("recognition", food_recognition_node)
@@ -68,11 +66,8 @@ def create_graph() -> StateGraph:
     workflow.add_node("goalplanning", goalplanning_node)
     
     # Define workflow edges
-    # START -> normalize
-    workflow.set_entry_point("normalize")
-    
-    # normalize -> guardrail
-    workflow.add_edge("normalize", "guardrail")
+    # START -> guardrail
+    workflow.set_entry_point("guardrail")
     
     # guardrail -> condition: safe or unsafe?
     workflow.add_conditional_edges(

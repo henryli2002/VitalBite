@@ -2,11 +2,12 @@
 
 import os
 import json
-from typing import Optional, Type, TypeVar
+from typing import Optional, Type, TypeVar, List, Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, AnyMessage
 
 from langgraph_app.config import config as app_config
 
@@ -47,59 +48,55 @@ class OpenAIClient:
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
 
-    def generate_text(
+    def _convert_messages(self, messages: List[AnyMessage], system_prompt: Optional[str] = None) -> List[Any]:
+        """Convert LangChain messages to OpenAI format."""
+        openai_msgs: List[Any] = []
+        if system_prompt:
+            openai_msgs.append({"role": "system", "content": system_prompt})
+            
+        for msg in messages:
+            role = "user" if isinstance(msg, HumanMessage) else ("system" if isinstance(msg, SystemMessage) else "assistant")
+            
+            # LangChain's content format is already highly compatible with OpenAI
+            if isinstance(msg.content, str):
+                openai_msgs.append({"role": role, "content": msg.content})
+            elif isinstance(msg.content, list):
+                # We map `image_url` and `text` parts directly
+                formatted_content = []
+                for part in msg.content:
+                    if isinstance(part, str):
+                        formatted_content.append({"type": "text", "text": part})
+                    elif isinstance(part, dict):
+                        if part.get("type") == "text":
+                            formatted_content.append({"type": "text", "text": part.get("text", "")})
+                        elif part.get("type") == "image_url":
+                            # OpenAI expects {"type": "image_url", "image_url": {"url": "..."}}
+                            formatted_content.append({
+                                "type": "image_url",
+                                "image_url": part.get("image_url", {})
+                            })
+                        elif part.get("type") == "image" and part.get("source_type") == "base64":
+                            # Convert legacy internal format to standard image_url
+                            b64_data = part.get("data", "")
+                            formatted_content.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{b64_data}"}
+                            })
+                openai_msgs.append({"role": role, "content": formatted_content})
+                
+        return openai_msgs
+
+    def generate(
         self,
-        prompt: str,
-        system_instruction: Optional[str] = None,
+        messages: List[AnyMessage],
+        system_prompt: Optional[str] = None,
     ) -> str:
         """Generate text response from OpenAI."""
-
-        messages = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-
-        messages.append({"role": "user", "content": prompt})
+        openai_msgs = self._convert_messages(messages, system_prompt)
 
         response = self.client.chat.completions.create(
             model=self.model_name,
-            messages=messages,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            presence_penalty=self.presence_penalty,
-        )
-
-        return response.choices[0].message.content or ""
-
-    def generate_vision(
-        self,
-        image_b64: str,
-        prompt: str,
-        system_instruction: Optional[str] = None,
-    ) -> str:
-        """Generate response from image and text prompt (multimodal)."""
-
-        messages = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{image_b64}",
-                        },
-                    },
-                ],
-            }
-        )
-
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
+            messages=openai_msgs,
             temperature=self.temperature,
             top_p=self.top_p,
             presence_penalty=self.presence_penalty,
@@ -109,42 +106,23 @@ class OpenAIClient:
 
     def generate_structured(
         self,
-        prompt: str,
+        messages: List[AnyMessage],
         schema: Type[T],
-        image_b64: Optional[str] = None,
-        system_instruction: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> T:
         """Generate structured output conforming to a Pydantic schema."""
-
-        messages = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-
-        if image_b64:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_b64}",
-                            },
-                        },
-                    ],
-                }
-            )
-        else:
-            messages.append({"role": "user", "content": prompt})
+        openai_msgs = self._convert_messages(messages, system_prompt)
 
         response = self.client.chat.completions.create(
             model=self.model_name,
-            messages=messages,
+            messages=openai_msgs,
             response_format={"type": "json_object"},
             temperature=self.temperature,
         )
 
         text = response.choices[0].message.content or "{}"
-        data = json.loads(text)
-        return schema(**data)
+        try:
+            data = json.loads(text)
+            return schema(**data)
+        except json.JSONDecodeError:
+            return schema() # Handle empty or malformed

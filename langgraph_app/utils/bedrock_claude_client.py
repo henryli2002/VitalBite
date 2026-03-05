@@ -1,14 +1,15 @@
-"""AWS Bedrock Claude client wrapper for text, vision (base64), and structured generation."""
+"""AWS Bedrock Claude client wrapper for text, vision, and structured generation."""
 
 import os
 import json
 import base64
-from typing import Optional, Type, TypeVar
+from typing import Optional, Type, TypeVar, List, Any
 
 import boto3
 from botocore.config import Config as BotoConfig
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, AnyMessage
 
 from langgraph_app.config import config as app_config
 
@@ -52,108 +53,119 @@ class BedrockClaudeClient:
             config=BotoConfig(retries={"max_attempts": 3, "mode": "standard"}),
         )
 
-    def _build_messages(
+    def _convert_messages(self, messages: List[AnyMessage], system_prompt: Optional[str] = None) -> tuple[list[dict], list[dict]]:
+        """Convert LangChain messages to Bedrock Converse API format.
+        Returns:
+            system: List of system message dicts
+            messages: List of regular message dicts
+        """
+        bedrock_msgs = []
+        system_blocks = []
+        
+        if system_prompt:
+            system_blocks.append({"text": system_prompt})
+            
+        for msg in messages:
+            if isinstance(msg, SystemMessage):
+                if isinstance(msg.content, str):
+                    system_blocks.append({"text": msg.content})
+                continue
+                
+            role = "user" if isinstance(msg, HumanMessage) else "assistant"
+            
+            content_parts = []
+            if isinstance(msg.content, str):
+                content_parts.append({"text": msg.content})
+            elif isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, str):
+                        content_parts.append({"text": part})
+                    elif isinstance(part, dict):
+                        if part.get("type") == "text":
+                            content_parts.append({"text": part.get("text", "")})
+                        elif part.get("type") == "image_url":
+                            url = part.get("image_url", {}).get("url", "")
+                            if "base64," in url:
+                                mime_type = url.split(";")[0].split(":")[1]
+                                b64_data = url.split("base64,")[1]
+                                content_parts.append({
+                                    "image": {
+                                        "format": mime_type.split("/")[-1],
+                                        "source": {"bytes": base64.b64decode(b64_data)}
+                                    }
+                                })
+                        elif part.get("type") == "image" and part.get("source_type") == "base64":
+                            b64_data = part.get("data")
+                            if b64_data:
+                                content_parts.append({
+                                    "image": {
+                                        "format": "jpeg",
+                                        "source": {"bytes": base64.b64decode(b64_data)}
+                                    }
+                                })
+                                
+            if content_parts:
+                bedrock_msgs.append({"role": role, "content": content_parts})
+                
+        return system_blocks, bedrock_msgs
+
+    def generate(
         self,
-        prompt: str,
-        image_b64: Optional[str],
-        system_instruction: Optional[str],
-    ):
-        messages: list[dict] = []
-        if system_instruction:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": [{"type": "text", "text": system_instruction}],
-                }
-            )
-
-        content_parts: list[dict] = [{"type": "text", "text": prompt}]
-        if image_b64:
-            content_parts.append(
-                {
-                    "type": "image",  # Claude 3.5 Bedrock image block
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": image_b64,
-                    },
-                }
-            )
-
-        messages.append({"role": "user", "content": content_parts})
-        return messages
-
-    def generate_text(
-        self,
-        prompt: str,
-        system_instruction: Optional[str] = None,
+        messages: List[AnyMessage],
+        system_prompt: Optional[str] = None,
     ) -> str:
-        messages = self._build_messages(prompt, None, system_instruction)
+        system_blocks, bedrock_msgs = self._convert_messages(messages, system_prompt)
 
-        response = self.client.converse(
-            modelId=self.model_name,
-            messages=messages,
-                        inferenceConfig={
+        kwargs = {
+            "modelId": self.model_name,
+            "messages": bedrock_msgs,
+            "inferenceConfig": {
                 "maxTokens": self._max_tokens,
                 "temperature": self.temperature,
                 "topP": self.top_p,
-                "stopSequences": [], # Bedrock does not support presence_penalty directly, topP handles similar intent
-            },
-        )
+                "stopSequences": [],
+            }
+        }
+        if system_blocks:
+            kwargs["system"] = system_blocks
+
+        response = self.client.converse(**kwargs)
 
         outputs = response.get("output", {}).get("message", {}).get("content", [])
-        texts = [c.get("text", "") for c in outputs if c.get("type") == "text"]
-        return "\n".join(texts).strip()
-
-    def generate_vision(
-        self,
-        image_b64: str,
-        prompt: str,
-        system_instruction: Optional[str] = None,
-    ) -> str:
-        messages = self._build_messages(prompt, image_b64, system_instruction)
-
-        response = self.client.converse(
-            modelId=self.model_name,
-            messages=messages,
-                        inferenceConfig={
-                "maxTokens": self._max_tokens,
-                "temperature": self.temperature,
-                "topP": self.top_p,
-                "stopSequences": [], # Bedrock does not support presence_penalty directly, topP handles similar intent
-            },
-        )
-
-        outputs = response.get("output", {}).get("message", {}).get("content", [])
-        texts = [c.get("text", "") for c in outputs if c.get("type") == "text"]
+        texts = [c.get("text", "") for c in outputs if "text" in c]
         return "\n".join(texts).strip()
 
     def generate_structured(
         self,
-        prompt: str,
+        messages: List[AnyMessage],
         schema: Type[T],
-        image_b64: Optional[str] = None,
-        system_instruction: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> T:
-        messages = self._build_messages(prompt, image_b64, system_instruction)
+        system_blocks, bedrock_msgs = self._convert_messages(messages, system_prompt)
 
-        # Ask Claude to return JSON only.
-        response = self.client.converse(
-            modelId=self.model_name,
-            messages=messages,
-                        inferenceConfig={
+        kwargs = {
+            "modelId": self.model_name,
+            "messages": bedrock_msgs,
+            "inferenceConfig": {
                 "maxTokens": self._max_tokens,
                 "temperature": self.temperature,
                 "topP": self.top_p,
-                "stopSequences": [], # Bedrock does not support presence_penalty directly, topP handles similar intent
+                "stopSequences": [],
             },
-            additionalModelRequestFields={
+            "additionalModelRequestFields": {
                 "response_format": {"type": "json_object"}
-            },
-        )
+            }
+        }
+        if system_blocks:
+            kwargs["system"] = system_blocks
+
+        response = self.client.converse(**kwargs)
 
         outputs = response.get("output", {}).get("message", {}).get("content", [])
-        texts = [c.get("text", "") for c in outputs if c.get("type") == "text"]
+        texts = [c.get("text", "") for c in outputs if "text" in c]
         json_text = "\n".join(texts).strip() or "{}"
-        data = json.loads(json_text)
-        return schema(**data)
+        try:
+            data = json.loads(json_text)
+            return schema(**data)
+        except json.JSONDecodeError:
+            return schema()

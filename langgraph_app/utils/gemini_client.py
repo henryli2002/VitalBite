@@ -2,14 +2,13 @@
 
 import os
 import json
-import base64
-import io
 from typing import Optional, Type, TypeVar, List, Any
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
-from PIL import Image
 from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, AnyMessage
+
 from langgraph_app.config import config as app_config
 
 # Load environment variables
@@ -52,132 +51,102 @@ class GeminiClient:
 
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
-    
-    def generate_text(
-        self, 
-        prompt: str, 
-        system_instruction: Optional[str] = None
-    ) -> str:
-        """
-        Generate text response from Gemini.
-        
-        Args:
-            prompt: User prompt
-            system_instruction: Optional system instruction
-            
-        Returns:
-            Generated text response
-        """
-        if system_instruction:
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=self.temperature,
-                top_p=self.top_p,
-            )
-        else:
-            config = types.GenerateContentConfig(
-                temperature=self.temperature,
-                top_p=self.top_p,
-            )
-            
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=config,
-        )
-        return response.text or ""
-    
-    def generate_vision(
-        self, 
-        images_b64: List[str], 
-        prompt: str,
-        system_instruction: Optional[str] = None
-    ) -> str:
-        """
-        Generate response from image and text prompt (multimodal).
-        
-        Args:
-            images_b64: List of Base64 encoded image strings
-            prompt: Text prompt describing what to do with the image
-            system_instruction: Optional system instruction
-            
-        Returns:
-            Generated text response
-        """
-        
-        contents: List[Any] = [prompt]
-        for image_b64 in images_b64:
-            image_data = base64.b64decode(image_b64)
-            image = Image.open(io.BytesIO(image_data))
-            contents.append(image)
 
-        if system_instruction:
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=self.temperature,
-                top_p=self.top_p,
-            )
-        else:
-            config = types.GenerateContentConfig(
-                temperature=self.temperature,
-                top_p=self.top_p,
-            )
+    def _convert_messages(self, messages: List[AnyMessage]) -> List[dict]:
+        """Convert LangChain messages to Gemini format."""
+        gemini_contents = []
+        for msg in messages:
+            role = "user" if isinstance(msg, HumanMessage) else "model"
+            # Ignore SystemMessage here, we pass it via config
+            if isinstance(msg, SystemMessage):
+                continue
+                
+            parts = []
+            if isinstance(msg.content, str):
+                parts.append({"text": msg.content})
+            elif isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, str):
+                        parts.append({"text": part})
+                    elif isinstance(part, dict):
+                        if part.get("type") == "text":
+                            parts.append({"text": part.get("text", "")})
+                        elif part.get("type") == "image_url":
+                            image_url = part.get("image_url", {}).get("url", "")
+                            if "base64," in image_url:
+                                mime_type = image_url.split(";")[0].split(":")[1]
+                                b64_data = image_url.split("base64,")[1]
+                                parts.append({
+                                    "inline_data": {
+                                        "data": b64_data,
+                                        "mime_type": mime_type
+                                    }
+                                })
+                        elif part.get("type") == "image" and part.get("source_type") == "base64":
+                            b64_data = part.get("data")
+                            if b64_data:
+                                parts.append({
+                                    "inline_data": {
+                                        "data": b64_data,
+                                        "mime_type": "image/jpeg"
+                                    }
+                                })
+            
+            gemini_contents.append({"role": role, "parts": parts})
+            
+        return gemini_contents
+
+    def generate(
+        self, 
+        messages: List[AnyMessage], 
+        system_prompt: Optional[str] = None
+    ) -> str:
+        """Generate text response from Gemini."""
+        contents = self._convert_messages(messages)
         
+        config_kwargs: dict[str, Any] = {
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+        }
+        if system_prompt:
+            config_kwargs["system_instruction"] = system_prompt
+            
+        config = types.GenerateContentConfig(**config_kwargs) # type: ignore
+            
         response = self.client.models.generate_content(
             model=self.model_name,
-            contents=contents,
+            contents=contents, # type: ignore
             config=config,
         )
         return response.text or ""
-    
+
     def generate_structured(
         self,
-        prompt: str, 
+        messages: List[AnyMessage],
         schema: Type[T],
-        images_b64: Optional[List[str]] = None,
-        system_instruction: Optional[str] = None
+        system_prompt: Optional[str] = None
     ) -> T:
-        """
-        Generate structured output conforming to a Pydantic schema.
+        """Generate structured output from a list of messages."""
+        contents = self._convert_messages(messages)
         
-        Args:
-            prompt: User prompt
-            schema: Pydantic BaseModel class to structure the output
-            images_b64: Optional list of Base64 encoded image strings
-            system_instruction: Optional system instruction
+        config_kwargs: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+            "temperature": self.temperature,
+        }
+        if system_prompt:
+            config_kwargs["system_instruction"] = system_prompt
             
-        Returns:
-            Instance of schema class with generated data
-        """
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=schema,
-            system_instruction=system_instruction,
-            temperature=self.temperature,
-        )
-        
-        contents: List[Any] = [prompt]
-        if images_b64:
-            for image_b64 in images_b64:
-                image_data = base64.b64decode(image_b64)
-                image = Image.open(io.BytesIO(image_data))
-                contents.append(image)
+        config = types.GenerateContentConfig(**config_kwargs) # type: ignore
 
         response = self.client.models.generate_content(
             model=self.model_name,
-            contents=contents,
+            contents=contents, # type: ignore
             config=config,
         )
         
-        # New SDK might support direct parsing, but to be safe and consistent
-        # with previous behavior, we handle the text response.
-        # However, passing response_schema usually ensures JSON structure.
-        
-        # Try to use parsed response if available (some SDK versions support this)
-        # Otherwise parse text.
         try:
             if hasattr(response, 'parsed') and response.parsed is not None:
-                # If the SDK automatically parses it into the Pydantic model or dict
                 if isinstance(response.parsed, schema):
                     return response.parsed
                 elif isinstance(response.parsed, dict):
@@ -186,5 +155,8 @@ class GeminiClient:
             pass # Fallback to text parsing
 
         json_text = response.text or "{}"
-        data = json.loads(json_text)
-        return schema(**data)
+        try:
+            data = json.loads(json_text)
+            return schema(**data)
+        except json.JSONDecodeError:
+            return schema()

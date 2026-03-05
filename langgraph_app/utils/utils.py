@@ -1,7 +1,9 @@
+"""Utility functions for the LangGraph application."""
 
-
-from langchain_core.messages import HumanMessage
 from typing import List, Optional, Any
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+import base64
+import io
 
 def detect_language(text: str) -> str:
     """Simple language detection based on character ranges."""
@@ -10,28 +12,21 @@ def detect_language(text: str) -> str:
             return "Chinese"
     return "English"
 
-def get_images_from_history(messages: List[Any]) -> Optional[List[str]]:
-    """
-    Scans message history in reverse to find the last HumanMessage with images.
-    """
-    for msg in reversed(messages):
-        if not isinstance(msg, HumanMessage):
-            continue
-        
-        if isinstance(msg.content, list):
-            image_blocks = []
-            for block in msg.content:
-                if not isinstance(block, dict):
-                    continue
-                
-                if block.get("type") == "image_url":
-                    image_url = block.get("image_url", {}).get("url", "")
-                    if "base64," in image_url:
-                        image_blocks.append(image_url.split("base64,")[1])
-                elif block.get("type") == "image" and block.get("source_type") == "base64":
-                    if block.get("data"):
-                        image_blocks.append(block.get("data"))
-            
-            if image_blocks:
-                return image_blocks
-    return None
+def _get_text_from_content(content: Any) -> str:
+    """Extracts plain text from a LangChain message content part."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        text_parts = [
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        ]
+        return " ".join(text_parts).strip()
+    return ""
+
+def get_current_user_text(messages: List[Any]) -> str:
+    """Gets the text from the most recent user message."""
+    if not messages or not isinstance(messages[-1], HumanMessage):
+        return ""
+    return _get_text_from_content(messages[-1].content)

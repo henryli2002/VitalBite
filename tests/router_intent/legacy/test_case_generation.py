@@ -44,14 +44,17 @@ def generate_user_input(client: GeminiClient, scenario: str, image_b64: Optional
     if image_b64:
         vision_prompt = f"{base_prompt} The user has just uploaded this image."
         try:
-            response = client.generate_vision(image_b64=image_b64, prompt=vision_prompt)
+            from langchain_core.messages import HumanMessage
+            msg = HumanMessage(content=[{"type": "text", "text": vision_prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}])
+            response = client.generate(messages=[msg])
             return response.strip().replace('"', '')
         except Exception as e:
             print(f"Error generating vision prompt for {scenario}: {e}")
             return "What is this?" 
     else:
         try:
-            response = client.generate_text(prompt=base_prompt)
+            from langchain_core.messages import HumanMessage
+            response = client.generate(messages=[HumanMessage(content=base_prompt)])
             return response.strip().replace('"', '')
         except Exception as e:
             print(f"Error generating text prompt for {scenario}: {e}")
