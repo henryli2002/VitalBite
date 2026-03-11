@@ -10,66 +10,19 @@ from langgraph_app.utils.utils import (
     detect_language,
     get_current_user_text,
 )
+from langgraph_app.tools.tools import search_restaurants_tool
+from langgraph_app.tools.map.ip_location import get_location_from_ip
 
 
 class RecommendationQuery(BaseModel):
     """Structured query parameters for recommendations."""
-    location: str | None = None
     radius_km: float | None = None
     cuisine_type: str | None = Field(description="cuisine type or null. If an image of food is provided, infer the cuisine from it.")
     dietary_restrictions: List[str] = Field(default_factory=list)
     price_range: str | None = Field(description="budget|moderate|expensive or null")
-
-
-def _get_restaurants_mock(
-    location: str | None,
-    cuisine_type: str | None,
-    dietary_restrictions: List[str]
-) -> List[Dict[str, Any]]:
-    """
-    Mock function to simulate restaurant search.
-    """
-    # Mock restaurant data
-    mock_restaurants = [
-        {
-            "name": "健康素食餐厅",
-            "cuisine": "素食",
-            "address": "台北市大安区",
-            "rating": 4.5,
-            "price_range": "中等",
-            "dietary_options": ["素食", "无麸质"]
-        },
-        {
-            "name": "日式料理店",
-            "cuisine": "日式",
-            "address": "台北市信义区",
-            "rating": 4.8,
-            "price_range": "中高",
-            "dietary_options": ["海鲜", "低卡"]
-        },
-        {
-            "name": "地中海风味餐厅",
-            "cuisine": "地中海",
-            "address": "台北市中山区",
-            "rating": 4.3,
-            "price_range": "中等",
-            "dietary_options": ["健康", "低钠"]
-        }
-    ]
-    
-    # Filter based on criteria (simplified)
-    filtered = []
-    for rest in mock_restaurants:
-        if cuisine_type and cuisine_type.lower() not in rest["cuisine"].lower():
-            continue
-        if dietary_restrictions:
-            # Check if restaurant supports any of the restrictions
-            if not any(dr.lower() in " ".join(rest["dietary_options"]).lower() 
-                      for dr in dietary_restrictions):
-                continue
-        filtered.append(rest)
-    
-    return filtered[:5]  # Return top 5
+    # TODO: Add logic to receive precise lat/lng from frontend after prompting user for location permission
+    # lat: float | None = Field(None, description="latitude if provided in context")
+    # lng: float | None = Field(None, description="longitude if provided in context")
 
 
 def food_recommendation_node(state: GraphState) -> GraphState:
@@ -98,12 +51,30 @@ Your response must be a JSON object with the requested schema. Ensure your respo
             system_prompt="You are an expert food recommendation assistant."
         )
         
-        # Step 2: Get restaurant recommendations (mock for now)
-        restaurants = _get_restaurants_mock(
-            query_params.location,
-            query_params.cuisine_type,
-            query_params.dietary_restrictions
-        )
+        # Determine location fallback
+        final_lat = None
+        final_lng = None
+        
+        # Currently default to IP location.
+        # TODO: Update this to use explicit user location or frontend provided lat/lng
+        ip_loc = get_location_from_ip()
+        if ip_loc:
+            final_lat, final_lng = ip_loc
+        
+        # Step 2: Get restaurant recommendations using actual tool
+        raw_result = search_restaurants_tool.invoke({
+            "location": None, # Force no text location bias for now, rely purely on coordinates/ip
+            "cuisine_type": query_params.cuisine_type,
+            "radius_km": query_params.radius_km or 5.0,
+            "lat": final_lat,
+            "lng": final_lng
+        })
+        
+        try:
+            result_dict = json.loads(raw_result)
+            restaurants = result_dict.get("restaurants", [])
+        except Exception:
+            restaurants = []
         
         if not restaurants:
             state["recommendation_result"] = {"restaurants": []}

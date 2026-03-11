@@ -12,7 +12,7 @@
 
 ### 4. 💾 持久化记忆与会话管理 (Persistence)
 - **现状**：目前在 LangGraph Studio 里测试没问题，但如果要把应用部署出去，需要管理多个用户的长线记忆。
-- **计划**：为您的 `build_graph()` 引入 LangGraph 的 `MemorySaver`（如 SqliteSaver 或 PostgresSaver），通过 `thread_id` 或 `patient_id` 实现跨设备的长期记忆，让 AI 能记住用户几天前的饮食偏好。
+- **计划**：为您的 `build_graph()` 引入 LangGraph 的 `MemorySaver`（如 SqliteSaver 或 PostgresSaver），通过 `thread_id` 或 `patient_id` 实现跨设备的长期记忆，让 AI 能记住用户几天前的饮食偏好。(注意要放到数据库里，用postpresql？)
 
 ### 5. ⚡ 流式输出体验优化 (Streaming)
 - **现状**：目前 `client.generate` 是阻塞的，要等模型彻底想完才吐出完整的一句话，这在处理多模态图片时可能需要等 3-5 秒，UX 体验不够好。
