@@ -25,6 +25,22 @@ class RecommendationQuery(BaseModel):
     # lng: float | None = Field(None, description="longitude if provided in context")
 
 
+class Restaurant(BaseModel):
+    """Represents a single restaurant recommendation."""
+    name: str = Field(description="Name of the restaurant.")
+    address: str = Field(description="Address of the restaurant.")
+    rating: float = Field(description="Rating of the restaurant.")
+    user_ratings_total: int = Field(description="Total number of user ratings.")
+    summary: str = Field(description="A short summary of why this restaurant is a good fit, highlighting aspects relevant to the user's query.")
+
+class Recommendation(BaseModel):
+    """A complete recommendation response, including a title, list of restaurants, and conclusion."""
+    title: str = Field(description="A warm, friendly title for the recommendation list, acknowledging the user's request.")
+    restaurants: List[Restaurant] = Field(description="A list of recommended restaurants.")
+    conclusion: str = Field(description="A concluding remark or a friendly question to encourage further interaction.")
+
+
+
 def food_recommendation_node(state: GraphState) -> GraphState:
     """
     Provide restaurant and food recommendations based on user query.
@@ -82,37 +98,43 @@ Your response must be a JSON object with the requested schema. Ensure your respo
             state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
             return state
         
-        # Step 3: Format recommendations into natural language
-        formatting_prompt = f"""Convert this restaurant list into a friendly, natural language recommendation based on the user's query.
+        # Step 3: Format recommendations into a structured object
+        formatting_prompt = f"""Convert this restaurant list into a structured recommendation based on the user's query.
 
 Restaurants:
 {json.dumps(restaurants, ensure_ascii=False, indent=2)}
 
-Provide a warm, helpful response that:
-1. Acknowledges the user's request.
-2. Lists the recommended restaurants with key details.
-3. Mentions why each restaurant might be a good fit.
-4. Keeps it concise and friendly.
+Your response must be a JSON object that conforms to the `Recommendation` schema. Base your summaries on the user's query and preferences. The entire response should be in the user's dominant language ('{lang}').
 """
 
         system_instruction = (
-            f"You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions. Your entire response should be in the user's dominant language ('{lang}'). However, if the user specifically asks for another language, please switch to that language."
+            f"You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions in a structured format. Your entire response should be in the user's dominant language ('{lang}'). However, if the user specifically asks for another language, please switch to that language."
         )
-        
+
         local_messages_2 = messages.copy()
         local_messages_2.append(HumanMessage(content=formatting_prompt))
 
-        final_response = client.generate(
+        structured_response = client.generate_structured(
             messages=local_messages_2,
+            schema=Recommendation,
             system_prompt=system_instruction,
         )
-        
+
+        # Step 4: Convert the structured response to a formatted markdown string
+        markdown_response = f"### {structured_response.title}\n\n"
+        for r in structured_response.restaurants:
+            markdown_response += f"#### {r.name}\n"
+            markdown_response += f"- **地址**: {r.address}\n"
+            markdown_response += f"- **评分**: {r.rating} ({r.user_ratings_total} 评价)\n"
+            markdown_response += f"- **推荐理由**: {r.summary}\n\n"
+        markdown_response += f"{structured_response.conclusion}"
+
         state["recommendation_result"] = {
             "restaurants": restaurants,
             "query_params": query_params.model_dump()
         }
-        state["final_response"] = final_response
-        messages.append(AIMessage(content=final_response))
+        state["final_response"] = markdown_response
+        messages.append(AIMessage(content=markdown_response))
         state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
         return state
 

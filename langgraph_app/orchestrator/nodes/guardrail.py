@@ -1,37 +1,41 @@
-"""Global guardrail node for safety checks."""
+"""Guardrail nodes for input and output safety checks."""
 
 from typing import Dict, Any
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
+from pydantic import BaseModel
 
+class SafetyCheck(BaseModel):
+    safe: bool
+    reason: str | None = None
 
-def global_guardrail_node(state: GraphState) -> GraphState:
+def _check_safety(text_to_check: str, intent: str) -> Dict[str, Any]:
     """
-    Check user input for harmful content using Gemini.
+    Generic function to check text for harmful content.
     
     Args:
-        state: Current graph state
+        text_to_check: The text to be analyzed.
+        intent: The current intent to be preserved in the state.
         
     Returns:
-        Updated state with safety analysis
+        A dictionary with the safety analysis.
     """
-    client = get_llm_client()
-    input_text = state.get("input", {}).get("text", "")
-    
-    if not input_text:
+    if not text_to_check:
         # Empty input is considered safe
         return {
             "analysis": {
                 "safety_safe": True,
                 "safety_reason": None,
-                "intent": state.get("analysis", {}).get("intent", "")
+                "intent": intent
             }
         }
+
+    client = get_llm_client()
     
     # Safety check prompt
-    safety_prompt = f"""Analyze the following user input for harmful, inappropriate, or unsafe content.
+    safety_prompt = f"""Analyze the following text for harmful, inappropriate, or unsafe content.
 
-User input: {input_text}
+Text: {text_to_check}
 
 Respond with a JSON object containing:
 - "safe": boolean indicating if the content is safe
@@ -47,12 +51,6 @@ Only mark as unsafe if the content contains:
 Be lenient with food-related queries, even if they mention dietary restrictions or health concerns."""
 
     try:
-        from pydantic import BaseModel
-        
-        class SafetyCheck(BaseModel):
-            safe: bool
-            reason: str | None = None
-        
         result = client.generate_structured(safety_prompt, SafetyCheck)
         
         if not result.safe:
@@ -65,7 +63,7 @@ Be lenient with food-related queries, even if they mention dietary restrictions 
                 "analysis": {
                     "safety_safe": False,
                     "safety_reason": result.reason,
-                    "intent": state.get("analysis", {}).get("intent", "")
+                    "intent": intent
                 },
                 "final_response": safety_message
             }
@@ -74,7 +72,7 @@ Be lenient with food-related queries, even if they mention dietary restrictions 
             "analysis": {
                 "safety_safe": True,
                 "safety_reason": None,
-                "intent": state.get("analysis", {}).get("intent", "")
+                "intent": intent
             }
         }
     except Exception as e:
@@ -84,6 +82,23 @@ Be lenient with food-related queries, even if they mention dietary restrictions 
             "analysis": {
                 "safety_safe": True,
                 "safety_reason": f"Safety check error: {str(e)}",
-                "intent": state.get("analysis", {}).get("intent", "")
+                "intent": intent
             }
         }
+
+def input_guardrail_node(state: GraphState) -> GraphState:
+    """
+    Check the user's input for harmful content.
+    """
+    latest_message = state.get("messages", [])[-1]
+    text_to_check = latest_message.content if latest_message else ""
+    intent = state.get("analysis", {}).get("intent", "")
+    return _check_safety(text_to_check, intent)
+
+def output_guardrail_node(state: GraphState) -> GraphState:
+    """
+    Check the agent's final response for harmful content.
+    """
+    text_to_check = state.get("final_response", "")
+    intent = state.get("analysis", {}).get("intent", "")
+    return _check_safety(text_to_check, intent)
