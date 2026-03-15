@@ -8,7 +8,7 @@ from langgraph.graph.message import add_messages
 
 class AnalysisData(TypedDict):
     """Analysis results from guardrail and routing."""
-    intent: Literal["recognition", "recommendation", "exit", "chitchat", "tutorial", "guardrails", "goalplanning"]
+    intent: Literal["recognition", "recommendation", "chitchat", "tutorial", "guardrails", "goalplanning"]
     safety_safe: bool
     safety_reason: Optional[str]
 

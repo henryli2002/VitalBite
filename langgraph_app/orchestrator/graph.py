@@ -8,7 +8,7 @@ from langgraph_app.orchestrator.nodes.guardrail import (
     output_guardrail_node,
 )
 from langgraph_app.orchestrator.nodes.router import intent_router_node
-from langgraph_app.agents.food_recognition.agent import food_recognition_node
+from langgraph_app.agents.food_recognition.rag_agent import recognition_node
 from langgraph_app.agents.food_recommendation.agent import food_recommendation_node
 from langgraph_app.agents.chitchat.agent import chitchat_node
 from langgraph_app.agents.tutorial.agent import tutorial_node
@@ -16,15 +16,7 @@ from langgraph_app.agents.guardrails.agent import guardrails_node
 from langgraph_app.agents.goalplanning.agent import goalplanning_node
 
 def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
-    """
-    Condition function: Check if content passed safety check.
-    
-    Args:
-        state: Current graph state
-        
-    Returns:
-        "unsafe" if content is unsafe, "safe" otherwise
-    """
+    """Condition function to check for safety."""
     analysis = state.get("analysis", {})
     if not analysis.get("safety_safe", True):
         return "unsafe"
@@ -33,32 +25,19 @@ def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
 def route_by_intent(state: GraphState) -> Literal[
     "recognition", "recommendation", "chitchat", "tutorial", "guardrails", "goalplanning"
 ]:
-    """
-    Condition function: Route to appropriate agent based on intent.
-    
-    Args:
-        state: Current graph state
-        
-    Returns:
-        Intent string to route to
-    """
+    """Condition function to route based on intent."""
     analysis = state.get("analysis", {})
-    intent = analysis.get("intent", "")
+    intent = analysis.get("intent", "chitchat")
     return intent
 
 def create_graph() -> StateGraph:
-    """
-    Create and configure the LangGraph workflow.
-    
-    Returns:
-        Configured StateGraph instance
-    """
+    """Create and configure the LangGraph workflow."""
     workflow = StateGraph(GraphState)
     
     # Add nodes
     workflow.add_node("input_guardrail", input_guardrail_node)
     workflow.add_node("router", intent_router_node)
-    workflow.add_node("recognition", food_recognition_node)
+    workflow.add_node("recognition", recognition_node)
     workflow.add_node("recommendation", food_recommendation_node)
     workflow.add_node("chitchat", chitchat_node)
     workflow.add_node("tutorial", tutorial_node)
@@ -72,10 +51,7 @@ def create_graph() -> StateGraph:
     workflow.add_conditional_edges(
         "input_guardrail",
         should_continue,
-        {
-            "unsafe": "guardrails",
-            "safe": "router",
-        },
+        {"unsafe": "guardrails", "safe": "router"},
     )
 
     workflow.add_conditional_edges(
@@ -100,10 +76,7 @@ def create_graph() -> StateGraph:
     workflow.add_conditional_edges(
         "output_guardrail",
         should_continue,
-        {
-            "unsafe": "guardrails",
-            "safe": END,
-        },
+        {"unsafe": "guardrails", "safe": END},
     )
 
     workflow.add_edge("guardrails", END)
