@@ -6,11 +6,12 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
 
-class AnalysisData(TypedDict):
+class AnalysisData(TypedDict, total=False):
     """Analysis results from guardrail and routing."""
     intent: Literal["recognition", "recommendation", "chitchat", "tutorial", "guardrails", "goalplanning"]
     safety_safe: bool
     safety_reason: Optional[str]
+    safety_category: Optional[str]
 
 
 class GraphState(TypedDict, total=False):
