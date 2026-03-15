@@ -1,14 +1,14 @@
 """Food recommendation agent for restaurant and food suggestions."""
 
 from typing import Dict, Any, List
+from datetime import datetime
 import json
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph_app.utils.utils import (
-    detect_language,
-    get_current_user_text,
+    get_dominant_language,
 )
 from langgraph_app.tools.tools import search_restaurants_tool
 from langgraph_app.tools.map.ip_location import get_location_from_ip
@@ -33,12 +33,11 @@ def food_recommendation_node(state: GraphState) -> GraphState:
     messages = state.setdefault("messages", [])
     client = get_llm_client(module="food_recommendation")
 
-    current_text = get_current_user_text(messages)
-    lang = detect_language(current_text)
+    lang = get_dominant_language(messages)
 
     extraction_prompt = f"""Extract recommendation parameters from the user's query, considering the conversation history and any images provided. An image might give clues about the desired cuisine.
 
-Your response must be a JSON object with the requested schema. Ensure your response understands the user's language ('{lang}')."""
+Your response must be a JSON object with the requested schema. Ensure your response understands the user's dominant language ('{lang}')."""
 
     try:
         # Step 1: Use local messages to append extraction instruction
@@ -80,6 +79,7 @@ Your response must be a JSON object with the requested schema. Ensure your respo
             state["recommendation_result"] = {"restaurants": []}
             state["final_response"] = "抱歉，没有找到符合您要求的餐厅。请尝试调整搜索条件。" if lang == "Chinese" else "Sorry, no matching restaurants were found. Please try adjusting your search criteria."
             messages.append(AIMessage(content=state["final_response"]))
+            state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
             return state
         
         # Step 3: Format recommendations into natural language
@@ -96,7 +96,7 @@ Provide a warm, helpful response that:
 """
 
         system_instruction = (
-            f"You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions. Your entire response must be in {lang}."
+            f"You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions. Your entire response should be in the user's dominant language ('{lang}'). However, if the user specifically asks for another language, please switch to that language."
         )
         
         local_messages_2 = messages.copy()
@@ -113,10 +113,12 @@ Provide a warm, helpful response that:
         }
         state["final_response"] = final_response
         messages.append(AIMessage(content=final_response))
+        state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
         return state
 
     except Exception as e:
         state["recommendation_result"] = None
         state["final_response"] = f"抱歉，推荐过程中出现错误：{str(e)}"
         messages.append(AIMessage(content=state["final_response"]))
+        state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
         return state

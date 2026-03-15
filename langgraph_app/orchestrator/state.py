@@ -34,3 +34,4 @@ class GraphState(TypedDict, total=False):
     
     # Message history (LangGraph standard)
     messages: Annotated[List[AnyMessage], add_messages]
+    message_timestamps: List[str]

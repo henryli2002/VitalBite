@@ -1,13 +1,13 @@
 """Food recognition agent for identifying foods from images."""
 
+from datetime import datetime
 import json
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.utils import (
-    detect_language,
-    get_current_user_text,
+    get_dominant_language,
 )
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -37,8 +37,7 @@ def food_recognition_node(state: GraphState) -> GraphState:
     messages = state.setdefault("messages", [])
     client = get_llm_client(module="food_recognition")
 
-    current_text = get_current_user_text(messages)
-    lang = detect_language(current_text)
+    lang = get_dominant_language(messages)
 
     # Instead of parse_content_for_llm, we just let the LLM see the `messages`.
     # But we want to ensure it focuses on extracting data from the image.
@@ -63,7 +62,7 @@ Nutritional Analysis (JSON):
 {json.dumps(recognition_data, indent=2)}
 
 Guidelines:
-- **Language**: Your entire response must be in the same language as the user's query, which is '{lang}'.
+- **Language**: Your entire response should be in the same language as the user's dominant language in the conversation, which is '{lang}'. However, if the user specifically asks for another language, please switch to that language.
 - **Synthesize, Don't Just Repeat**: Do not just list the data. Explain what it means in response to the user's question.
 - **Address the Query**: If the user asks a specific question, answer it directly.
 - **Summarize if General**: If the user's query is general, provide a summary of the key findings from the analysis, including the health assessment.
@@ -82,11 +81,13 @@ Provide only the natural language response."""
         state["recognition_result"] = recognition_data
         state["final_response"] = final_response
         messages.append(AIMessage(content=final_response))
+        state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
 
     except Exception as e:
         print(f"Error in food recognition node: {e}")
         state["recognition_result"] = None
         state["final_response"] = f"抱歉，食物识别过程中出现错误：{str(e)}" if lang == "Chinese" else f"Sorry, an error occurred during food recognition: {str(e)}"
         messages.append(AIMessage(content=state["final_response"]))
+        state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
 
     return state

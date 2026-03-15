@@ -6,9 +6,9 @@ from langgraph.types import interrupt
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.utils import (
-    detect_language,
-    get_current_user_text,
+    get_dominant_language,
 )
+from datetime import datetime
 from time import sleep
 
 
@@ -20,8 +20,7 @@ def goalplanning_node(state: GraphState) -> GraphState:
     messages = state.setdefault("messages", [])
     client = get_llm_client(module="goalplanning")
 
-    current_text = get_current_user_text(messages)
-    lang = detect_language(current_text)
+    lang = get_dominant_language(messages)
 
     goalplanning_prompt = f"""You are a nutritional assistant helping users plan their diet and eating goals.
 
@@ -30,7 +29,7 @@ Generate a response based on the following rules:
 2. Incorporate the user's history provided in the conversation context. This includes previous meals, stated preferences, and personal data.
 3. Provide actionable suggestions. Instead of just giving information, suggest concrete plans, meal ideas, or next steps.
 4. Do not give medical advice. If the user asks for medical advice, gently decline and suggest they consult a doctor.
-5. LANGUAGE: Your entire response must be in the same language as the user input ('{lang}').
+5. LANGUAGE: Your entire response should be in the same language as the user's dominant language in the conversation ('{lang}'). However, if the user specifically asks for another language, please switch to that language.
 6. TONE: Stay encouraging, supportive, and informative.
 
 Keep the response concise (2-4 sentences)."""
@@ -58,6 +57,7 @@ Keep the response concise (2-4 sentences)."""
         final_response = fallback
 
     messages.append(AIMessage(content=final_response))
+    state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
     state["final_response"] = final_response
     
     return state

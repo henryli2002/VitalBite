@@ -56,7 +56,6 @@ def create_graph() -> StateGraph:
     workflow = StateGraph(GraphState)
     
     # Add nodes
-    workflow.add_node("guardrail", global_guardrail_node)
     workflow.add_node("router", intent_router_node)
     workflow.add_node("recognition", food_recognition_node)
     workflow.add_node("recommendation", food_recommendation_node)
@@ -64,21 +63,12 @@ def create_graph() -> StateGraph:
     workflow.add_node("tutorial", tutorial_node)
     workflow.add_node("guardrails", guardrails_node)
     workflow.add_node("goalplanning", goalplanning_node)
-    
+    workflow.add_node("post_guardrail", global_guardrail_node)
+
     # Define workflow edges
-    # START -> guardrail
-    workflow.set_entry_point("guardrail")
-    
-    # guardrail -> condition: safe or unsafe?
-    workflow.add_conditional_edges(
-        "guardrail",
-        should_continue_after_guardrail,
-        {
-            "unsafe": END,  # End with safety warning
-            "safe": "router"  # Continue to routing
-        }
-    )
-    
+    # START -> router
+    workflow.set_entry_point("router")
+
     # router -> condition: route by intent
     workflow.add_conditional_edges(
         "router",
@@ -94,13 +84,24 @@ def create_graph() -> StateGraph:
         }
     )
 
-    # All agent nodes -> END
-    workflow.add_edge("recognition", END)
-    workflow.add_edge("recommendation", END)
-    workflow.add_edge("chitchat", END)
-    workflow.add_edge("tutorial", END)
+    # All agent nodes -> post_guardrail
+    workflow.add_edge("recognition", "post_guardrail")
+    workflow.add_edge("recommendation", "post_guardrail")
+    workflow.add_edge("chitchat", "post_guardrail")
+    workflow.add_edge("tutorial", "post_guardrail")
+    workflow.add_edge("goalplanning", "post_guardrail")
+    
+    # post_guardrail -> condition: safe or unsafe?
+    workflow.add_conditional_edges(
+        "post_guardrail",
+        should_continue_after_guardrail,
+        {
+            "unsafe": "guardrails",
+            "safe": END
+        }
+    )
+
     workflow.add_edge("guardrails", END)
-    workflow.add_edge("goalplanning", END)
     
     return workflow.compile()
 
