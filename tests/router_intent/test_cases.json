@@ -414,7 +414,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -434,7 +434,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -454,7 +454,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -474,7 +474,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -494,7 +494,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -514,7 +514,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -534,7 +534,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -554,7 +554,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -574,7 +574,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -594,7 +594,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "exit",
+      "intent": "chitchat",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -714,7 +714,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "recognition",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -734,7 +734,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "recognition",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -754,7 +754,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "recognition",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -774,7 +774,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "recognition",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -794,7 +794,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "recognition",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -814,7 +814,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -834,7 +834,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -854,7 +854,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -874,7 +874,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -894,7 +894,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -914,7 +914,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -934,7 +934,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -954,7 +954,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -974,7 +974,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -994,7 +994,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -1614,7 +1614,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -1634,7 +1634,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -1654,7 +1654,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -1674,7 +1674,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
@@ -1694,7 +1694,7 @@
       }
     ],
     "expected_analysis": {
-      "intent": "chitchat",
+      "intent": "tutorial",
       "safety_safe": true,
       "safety_reason": null
     }
