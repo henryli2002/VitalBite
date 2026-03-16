@@ -1,6 +1,7 @@
 # Error Cases Per LLM
 
 ## gemini
+
 ### ID 36 — Weak Recognition Language — Vague i
 - Expected: tutorial
 - Actual: recognition
@@ -116,6 +117,7 @@
 - Has image: False (length=0)
 
 ## openai
+
 ### ID 36 — Weak Recognition Language — Vague i
 - Expected: tutorial
 - Actual: recognition
@@ -243,6 +245,7 @@
 - Has image: False (length=0)
 
 ## bedrock_claude
+
 ### ID 36 — Weak Recognition Language — Vague i
 - Expected: tutorial
 - Actual: recognition
