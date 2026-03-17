@@ -3,7 +3,7 @@
 from typing import Literal
 from langgraph.graph import StateGraph, END
 from langgraph_app.orchestrator.state import GraphState
-from langgraph_app.orchestrator.nodes.guardrail import (
+from langgraph_app.orchestrator.nodes.guardrails import (
     input_guardrail_node,
     output_guardrail_node,
 )
