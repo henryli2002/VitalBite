@@ -1,9 +1,10 @@
 """Intent routing node."""
 
 from typing import Dict, Any, Literal
-from langgraph_app.orchestrator.state import GraphState
+from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.config import config
+from langgraph_app.utils.logger import setup_logger
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph_app.utils.utils import (
@@ -14,6 +15,8 @@ import time
 import re
 from typing import Tuple
 from time import sleep
+
+logger = setup_logger(__name__)
 
 NORMALIZE = re.compile(r'[^\w\s]')
 
@@ -119,26 +122,31 @@ class IntentAnalysis(BaseModel):
     reasoning: str
 
 
-def intent_router_node(state: GraphState) -> GraphState:
+def intent_router_node(state: GraphState) -> NodeOutput:
     """
     Route user input to appropriate agent based on intent.
     This router focuses only on the high-level user goal.
     """
     client = get_llm_client(module="router")
     messages = state.get("messages", [])
-    debug_logs = state.get("debug_logs", [])
     
-    current_text = get_all_user_text(messages)
+    current_text = get_all_user_text(messages)  # type: ignore
 
     is_injection_risk, injection_reasoning = prompt_injection_risk(current_text)
 
     if is_injection_risk:
+        logger.warning(f"[router] Prompt injection risk detected: {injection_reasoning}")
         return {
             "analysis": {
                 "intent": "guardrails",
                 "safety_safe": False,
                 "safety_reason": injection_reasoning
-            }
+            },
+            "debug_logs": [{
+                "node": "router",
+                "status": "warning",
+                "reason": "prompt_injection"
+            }]
         }
     
     current_hour = time.localtime().tm_hour
@@ -177,37 +185,36 @@ Respond with a JSON object containing:
                 system_prompt=system_prompt
             )
             
-            debug_logs.append({
-                "node": "router",
-                "status": "success",
-                "llm_response": result.model_dump()
-            })
-
+            logger.info(f"[router] Intent detected: {result.intent} (confidence: {result.confidence})")
+            
             return {
                 "analysis": {
                     "intent": result.intent,
                     "safety_safe": True, # Already checked for injection
                     "safety_reason": None,
                 },
-                "debug_logs": debug_logs
+                "debug_logs": [{
+                    "node": "router",
+                    "status": "success",
+                    "llm_response": result.model_dump()
+                }]
             }
         except Exception as e:
             last_error = e
-            print(f"Intent routing failed on attempt {attempt + 1}: {e}")
+            logger.warning(f"[router] Intent routing failed on attempt {attempt + 1}: {e}")
             if attempt < 2:
                 sleep(1)
 
-    print(f"Intent routing ultimately failed after retries: {last_error}")
-    debug_logs.append({
-        "node": "router",
-        "status": "error",
-        "error": str(last_error)
-    })
+    logger.error(f"[router] Intent routing ultimately failed after retries: {last_error}", exc_info=True)
     return {
         "analysis": {
             "intent": "chitchat",
             "safety_safe": True,
             "safety_reason": None,
         },
-        "debug_logs": debug_logs
+        "debug_logs": [{
+            "node": "router",
+            "status": "error",
+            "error": str(last_error)
+        }]
     }

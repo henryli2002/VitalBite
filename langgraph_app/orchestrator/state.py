@@ -1,9 +1,19 @@
 """State definitions for LangGraph workflow."""
 
-from typing import TypedDict, Optional, List, Any, Literal
+import operator
+from typing import TypedDict, Optional, List, Any, Literal, Dict
 from typing_extensions import Annotated
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
+
+
+def _add_logs(left: List[dict], right: List[dict]) -> List[dict]:
+    """Reducer for debug logs to ensure they are appended, not overwritten."""
+    if not left:
+        left = []
+    if not right:
+        right = []
+    return left + right
 
 
 class AnalysisData(TypedDict, total=False):
@@ -31,8 +41,22 @@ class GraphState(TypedDict, total=False):
     final_response: str
     
     # Debug logging
-    debug_logs: List[dict]
+    debug_logs: Annotated[List[dict], _add_logs]
     
     # Message history (LangGraph standard)
     messages: Annotated[List[AnyMessage], add_messages]
     message_timestamps: List[str]
+
+
+# Standardized return type for all nodes
+class NodeOutput(TypedDict, total=False):
+    patient_id: Optional[str]
+    session_id: str
+    analysis: AnalysisData
+    recognition_result: Optional[dict]
+    recommendation_result: Optional[dict]
+    final_response: str
+    debug_logs: List[dict]
+    messages: List[AnyMessage]
+    message_timestamps: List[str]
+
