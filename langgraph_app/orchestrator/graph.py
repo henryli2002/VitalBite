@@ -12,7 +12,6 @@ from langgraph_app.agents.food_recognition.rag_agent import recognition_node
 from langgraph_app.agents.food_recommendation.agent import food_recommendation_node
 from langgraph_app.agents.chitchat.agent import chitchat_node
 from langgraph_app.agents.tutorial.agent import tutorial_node
-from langgraph_app.agents.guardrails.agent import guardrails_node
 from langgraph_app.agents.goalplanning.agent import goalplanning_node
 
 def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
@@ -23,14 +22,19 @@ def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
     return "safe"
 
 def route_by_intent(state: GraphState) -> Literal[
-    "recognition", "recommendation", "chitchat", "tutorial", "guardrails", "goalplanning"
+    "recognition", "recommendation", "chitchat", "tutorial", "goalplanning"
 ]:
     """Condition function to route based on intent."""
     analysis = state.get("analysis", {})
     intent = analysis.get("intent", "chitchat")
-    return intent
+    
+    # Fallback in case "guardrails" or other invalid intent somehow leaks through
+    if intent not in ["recognition", "recommendation", "chitchat", "tutorial", "goalplanning"]:
+        return "chitchat"
+        
+    return intent # type: ignore
 
-def create_graph() -> StateGraph:
+def create_graph(): # type: ignore
     """Create and configure the LangGraph workflow."""
     workflow = StateGraph(GraphState)
     
@@ -41,17 +45,17 @@ def create_graph() -> StateGraph:
     workflow.add_node("recommendation", food_recommendation_node)
     workflow.add_node("chitchat", chitchat_node)
     workflow.add_node("tutorial", tutorial_node)
-    workflow.add_node("guardrails", guardrails_node)
     workflow.add_node("goalplanning", goalplanning_node)
     workflow.add_node("output_guardrail", output_guardrail_node)
 
     # Define workflow edges
     workflow.set_entry_point("input_guardrail")
 
+    # If input is unsafe, short-circuit to END
     workflow.add_conditional_edges(
         "input_guardrail",
         should_continue,
-        {"unsafe": "guardrails", "safe": "router"},
+        {"unsafe": END, "safe": "router"},
     )
 
     workflow.add_conditional_edges(
@@ -62,7 +66,6 @@ def create_graph() -> StateGraph:
             "recommendation": "recommendation",
             "chitchat": "chitchat",
             "tutorial": "tutorial",
-            "guardrails": "guardrails",
             "goalplanning": "goalplanning",
         },
     )
@@ -73,13 +76,14 @@ def create_graph() -> StateGraph:
     workflow.add_edge("tutorial", "output_guardrail")
     workflow.add_edge("goalplanning", "output_guardrail")
 
+    # If output is unsafe, also short-circuit to END.
+    # Note: Output guardrail currently does not append an AIMessage in its node directly
+    # like input guardrail does, but we bypass the old 'guardrails' agent.
     workflow.add_conditional_edges(
         "output_guardrail",
         should_continue,
-        {"unsafe": "guardrails", "safe": END},
+        {"unsafe": END, "safe": END},
     )
-
-    workflow.add_edge("guardrails", END)
     
     return workflow.compile()
 
