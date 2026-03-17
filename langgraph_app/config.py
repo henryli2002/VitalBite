@@ -50,6 +50,20 @@ class Config:
     # LLM Provider Selection: gemini | openai | bedrock_claude
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
     
+    @classmethod
+    def get_provider_for_module(cls, module: Optional[str] = None) -> str:
+        """Get the specific LLM provider for a module or fallback to default."""
+        if not module:
+            return cls.LLM_PROVIDER
+        
+        # e.g., LLM_PROVIDER_ROUTER=openai
+        env_key = f"LLM_PROVIDER_{module.upper()}"
+        env_val = os.getenv(env_key)
+        if env_val:
+            return env_val
+            
+        return cls.LLM_PROVIDER
+    
     # Conversation History Configuration
     # Number of recent messages to include in context (includes both user and AI messages)
     # For example, 6 messages = last 3 conversation turns (3 user + 3 AI)

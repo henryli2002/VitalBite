@@ -19,7 +19,7 @@ def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = N
         model_name: Optional model override.
     """
 
-    selected = (provider or config.LLM_PROVIDER).lower()
+    selected = (provider or config.get_provider_for_module(module)).lower()
 
     if selected == "gemini":
         return GeminiClient(model_name=model_name, module=module)
