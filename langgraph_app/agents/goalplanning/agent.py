@@ -1,9 +1,9 @@
 """Goal planning agent for helping users with their diet and nutrition."""
 
 from typing import Dict, Any, List
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, SystemMessage, AnyMessage
 from langgraph.types import interrupt
-from langgraph_app.orchestrator.state import GraphState
+from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.utils import (
     get_dominant_language,
@@ -12,12 +12,11 @@ from datetime import datetime
 from time import sleep
 
 
-def goalplanning_node(state: GraphState) -> GraphState:
+def goalplanning_node(state: GraphState) -> NodeOutput:
     """
     Generate a helpful response to user questions about goal planning.
     """
-    state = state.copy()
-    messages = state.setdefault("messages", [])
+    messages = state.get("messages", [])
     client = get_llm_client(module="goalplanning")
 
     lang = get_dominant_language(messages)
@@ -36,13 +35,12 @@ Keep the response concise (2-4 sentences)."""
     
     final_response = ""
     last_error: Exception | None = None
+    ai_message = None
 
     for attempt in range(3):
         try:
-            final_response = client.generate(
-                messages=messages,
-                system_prompt=goalplanning_prompt
-            )
+            messages_to_send = [SystemMessage(content=goalplanning_prompt)] + messages
+            ai_message = client.invoke(messages_to_send, config={"tags": ["final_node_output"]})
             break
         except Exception as e:
             last_error = e
@@ -50,14 +48,15 @@ Keep the response concise (2-4 sentences)."""
             if attempt < 2:
                 sleep(1)
 
-    if not final_response:
+    if not ai_message:
         fallback = "您好！我可以帮您规划饮食目标。请告诉我您的需求。" if lang == "Chinese" else "Hello! I can help you plan your dietary goals. Please tell me what you need."
         if last_error:
             print(f"Goal planning generation ultimately failed after retries: {last_error}")
-        final_response = fallback
+        ai_message = AIMessage(content=fallback)
 
-    messages.append(AIMessage(content=final_response))
-    state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
-    state["final_response"] = final_response
-    
-    return state
+    msg: AnyMessage = ai_message # type: ignore
+
+    return {
+        "messages": [msg],
+        "message_timestamps": [datetime.utcnow().isoformat()]
+    }

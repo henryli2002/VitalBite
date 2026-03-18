@@ -6,7 +6,7 @@ from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.config import config
 from langgraph_app.utils.logger import setup_logger
 from pydantic import BaseModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph_app.utils.utils import (
     get_all_user_text,
 )
@@ -62,11 +62,14 @@ Respond with a JSON object containing:
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            result = client.generate_structured(
-                messages=messages,
-                schema=IntentAnalysis,
-                system_prompt=system_prompt
-            )
+            structured_llm = client.with_structured_output(IntentAnalysis)
+            messages_to_send = [SystemMessage(content=system_prompt)] + messages
+            
+            if last_error:
+                error_feedback = f"Your previous response failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
+                messages_to_send.append(SystemMessage(content=error_feedback))
+                
+            result = structured_llm.invoke(messages_to_send, config={"callbacks": []})
             
             logger.info(f"[router] Intent detected: {result.intent} (confidence: {result.confidence})")
             
@@ -79,7 +82,7 @@ Respond with a JSON object containing:
                 "debug_logs": [{
                     "node": "router",
                     "status": "success",
-                    "llm_response": result.model_dump()
+                    "llm_response": result.model_dump() if hasattr(result, 'model_dump') else {}
                 }]
             }
         except Exception as e:

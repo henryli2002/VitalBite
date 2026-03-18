@@ -4,13 +4,13 @@ workflows, using a RAG-based approach for high accuracy.
 """
 import json
 from datetime import datetime
-from langgraph_app.orchestrator.state import GraphState
+from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.tools.nutrition.fndds import fndds_nutrition_search_tool
 # Import both sizing tools
 from langgraph_app.tools.vision.spatial import estimate_volume_from_two_images_tool
 # from langgraph_app.tools.vision.single_image import estimate_size_from_single_image_tool # No longer needed
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, AnyMessage
 from pydantic import BaseModel, Field
 from typing import List
 from langgraph_app.utils.utils import get_dominant_language
@@ -26,14 +26,13 @@ class FoodAnalysis(BaseModel):
     foods: List[FoodItem] = Field(description="A list of all food items identified in the image, each with an estimated weight.")
 
 
-def recognition_node(state: GraphState) -> GraphState:
+def recognition_node(state: GraphState) -> NodeOutput:
     """
     A unified node that performs food recognition. It internally decides which
     sizing method to use (LLM direct estimation or two-image spatial measurement)
     based on the intent routed from the previous node.
     """
-    state = state.copy()
-    messages = state.setdefault("messages", [])
+    messages = state.get("messages", [])
     client = get_llm_client(module="food_recognition_rag")
     lang = get_dominant_language(messages)
     
@@ -44,28 +43,44 @@ def recognition_node(state: GraphState) -> GraphState:
 
     # --- Step 1: LLM identifies food and estimates weight directly ---
     print("Step 1: MLLM analyzing image to identify food and estimate weight...")
-    try:
-        food_analysis_obj = client.generate_structured(
-            messages=messages,
-            schema=FoodAnalysis,
-            system_prompt="""You are an expert nutritionist and portion size estimator. Analyze the latest user-provided image. 
+    last_error = None
+    structured_llm = client.with_structured_output(FoodAnalysis)
+    
+    for attempt in range(3):
+        try:
+            system_prompt = """You are an expert nutritionist and portion size estimator. Analyze the latest user-provided image. 
             For each food item you identify, provide both its name and a realistic estimation of its weight in grams.
             CRITICAL: The `food_name` MUST be in English, regardless of the user's language, because it will be used to search an English nutritional database. For example, if you see an apple, output 'apple', not '苹果'."""
-        )
-        identified_foods = food_analysis_obj.foods
-        print(f"LLM Food Analysis: {identified_foods}")
-    except Exception as e:
-        print(f"Error in RAG node (Step 1 - MLLM Analysis): {e}")
-        error_message = f"抱歉，分析食物图片时出错：{e}" if lang == "Chinese" else f"Sorry, an error occurred while analyzing the food image: {e}"
-        messages.append(AIMessage(content=error_message))
-        state["final_response"] = error_message
-        return state
+            
+            if last_error:
+                system_prompt += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
+            
+            messages_to_send = [SystemMessage(content=system_prompt)] + messages
+            food_analysis_obj = structured_llm.invoke(messages_to_send, config={"callbacks": []})
+            identified_foods = food_analysis_obj.get("foods", []) if isinstance(food_analysis_obj, dict) else food_analysis_obj.foods
+            print(f"LLM Food Analysis: {identified_foods}")
+            break
+        except Exception as e:
+            last_error = e
+            print(f"Error in RAG node (Step 1 - MLLM Analysis) attempt {attempt + 1}: {e}")
+            if attempt < 2:
+                import time
+                time.sleep(1)
+                
+    if not identified_foods and last_error:
+        print(f"Ultimately failed RAG node (Step 1 - MLLM Analysis): {last_error}")
+        error_message = f"抱歉，分析食物图片时出错：{last_error}" if lang == "Chinese" else f"Sorry, an error occurred while analyzing the food image: {last_error}"
+        return {
+            "messages": [AIMessage(content=error_message)],
+            "message_timestamps": [datetime.utcnow().isoformat()]
+        }
 
     if not identified_foods:
         no_food_message = "图片中未识别到食物。" if lang == "Chinese" else "No food items were identified in the image."
-        messages.append(AIMessage(content=no_food_message))
-        state["final_response"] = no_food_message
-        return state
+        return {
+            "messages": [AIMessage(content=no_food_message)],
+            "message_timestamps": [datetime.utcnow().isoformat()]
+        }
         
     # --- Step 2: Use RAG tool to get nutritional info ---
     print("Step 2: Retrieving nutritional info from FNDDS via RAG tool...")
@@ -84,7 +99,7 @@ def recognition_node(state: GraphState) -> GraphState:
             print(f"Error calling FNDDS tool for '{food_item.food_name}': {e}")
             all_nutrition_results.append({"error": str(e), "identified_name": food_item.food_name})
 
-    state["recognition_result"] = {"final_analysis": all_nutrition_results}
+    recognition_result = {"final_analysis": all_nutrition_results}
     
     # --- Step 3: LLM summarizes all results ---
     print("Step 3: LLM summarizing all information and selecting the best match...")
@@ -108,17 +123,19 @@ def recognition_node(state: GraphState) -> GraphState:
     """
     
     try:
-        final_response = client.generate(
-            messages=[HumanMessage(content=summary_prompt)],
-            system_prompt="You are a helpful nutrition assistant."
-        )
-        messages.append(AIMessage(content=final_response))
-        state["final_response"] = final_response
-        state.setdefault("message_timestamps", []).append(datetime.utcnow().isoformat())
+        messages_to_send_3 = [SystemMessage(content="You are a helpful nutrition assistant."), HumanMessage(content=summary_prompt)]
+        ai_message = client.invoke(messages_to_send_3, config={"tags": ["final_node_output"]})
+        msg: AnyMessage = ai_message # type: ignore
+        return {
+            "recognition_result": recognition_result,
+            "messages": [msg],
+            "message_timestamps": [datetime.utcnow().isoformat()]
+        }
     except Exception as e:
         print(f"Error in RAG node (Step 3 - Summary): {e}")
         error_message = f"抱歉，总结营养信息时出错：{e}" if lang == "Chinese" else f"Sorry, an error occurred while summarizing the nutritional information: {e}"
-        messages.append(AIMessage(content=error_message))
-        state["final_response"] = error_message
-        
-    return state
+        return {
+            "recognition_result": recognition_result,
+            "messages": [AIMessage(content=error_message)],
+            "message_timestamps": [datetime.utcnow().isoformat()]
+        }
