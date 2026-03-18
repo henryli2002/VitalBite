@@ -5,7 +5,7 @@ from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.logger import setup_logger
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph_app.utils.utils import get_all_user_text
 import re
 
@@ -210,54 +210,65 @@ Only mark as unsafe if the content contains:
 
 Be lenient with normal food-related queries, even if they mention dietary restrictions or health concerns. Only flag severe food safety risks."""
 
-    try:
-        result = client.generate_structured(
-            messages=[HumanMessage(content=text_to_check)],
-            schema=SafetyCheck,
-            system_prompt=system_prompt
-        )
-        
-        if not result.safe:
-            logger.warning(f"[{node_name}] Safety check failed. Reason: {result.reason}, Category: {result.category}")
+    last_error = None
+    structured_llm = client.with_structured_output(SafetyCheck)
+
+    for attempt in range(3):
+        try:
+            messages_to_send = [SystemMessage(content=system_prompt), HumanMessage(content=text_to_check)]
+            if last_error:
+                error_feedback = f"Your previous response failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
+                messages_to_send.append(SystemMessage(content=error_feedback))
+                
+            result = structured_llm.invoke(messages_to_send, config={"callbacks": []})
+            
+            if not result.safe:
+                logger.warning(f"[{node_name}] Safety check failed. Reason: {result.reason}, Category: {result.category}")
+                return {
+                    "analysis": {
+                        "safety_safe": False,
+                        "safety_reason": result.reason,
+                        "safety_category": result.category,
+                        "intent": "guardrails"
+                    },
+                    "messages": [AIMessage(content=get_standard_response(result.category, text_to_check))],
+                    "debug_logs": [{
+                        "node": node_name,
+                        "status": "warning",
+                        "reason": result.reason
+                    }]
+                }
+            
             return {
                 "analysis": {
-                    "safety_safe": False,
-                    "safety_reason": result.reason,
-                    "safety_category": result.category,
-                    "intent": "guardrails"
-                },
-                "messages": [AIMessage(content=get_standard_response(result.category, text_to_check))],
-                "debug_logs": [{
-                    "node": node_name,
-                    "status": "warning",
-                    "reason": result.reason
-                }]
+                    "safety_safe": True,
+                    "safety_reason": None,
+                    "safety_category": None,
+                    "intent": intent
+                }
             }
-        
-        return {
-            "analysis": {
-                "safety_safe": True,
-                "safety_reason": None,
-                "safety_category": None,
-                "intent": intent
-            }
-        }
-    except Exception as e:
-        # On error, default to safe but log the issue
-        logger.error(f"[{node_name}] Guardrail check encountered an error: {e}", exc_info=True)
-        return {
-            "analysis": {
-                "safety_safe": True,
-                "safety_reason": f"Safety check error: {str(e)}",
-                "safety_category": None,
-                "intent": intent
-            },
-            "debug_logs": [{
-                "node": node_name,
-                "status": "error",
-                "error": str(e)
-            }]
-        }
+        except Exception as e:
+            last_error = e
+            logger.warning(f"[{node_name}] Guardrail check failed on attempt {attempt + 1}: {e}")
+            if attempt < 2:
+                import time
+                time.sleep(1)
+
+    # On error, default to safe but log the issue
+    logger.error(f"[{node_name}] Guardrail check encountered an error after retries: {last_error}", exc_info=True)
+    return {
+        "analysis": {
+            "safety_safe": True,
+            "safety_reason": f"Safety check error: {str(last_error)}",
+            "safety_category": None,
+            "intent": intent
+        },
+        "debug_logs": [{
+            "node": node_name,
+            "status": "error",
+            "error": str(last_error)
+        }]
+    }
 
 def _extract_text(obj: Any) -> str:
     if not obj:
@@ -303,6 +314,13 @@ def output_guardrail_node(state: GraphState) -> NodeOutput:
     """
     Check the agent's final response for harmful content.
     """
-    text_to_check = _extract_text(state.get("final_response", ""))
+    messages = state.get("messages", [])
+    latest_ai_message = None
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            latest_ai_message = msg
+            break
+            
+    text_to_check = _extract_text(latest_ai_message) if latest_ai_message else ""
     intent = state.get("analysis", {}).get("intent", "chitchat")
     return _check_safety(text_to_check, intent, "output_guardrail")
