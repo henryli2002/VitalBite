@@ -117,7 +117,7 @@ def recognition_node(state: GraphState) -> NodeOutput:
     3.  **Calculate Totals**: Once you've selected the best match, adjust its nutritional values based on the 'estimated_weight_g'. For example, if an item's estimated weight is 150g, calculate 1.5 times its per-100g nutritional values.
     4.  **Sum and Summarize**: Sum up the total nutrition for the entire meal based on your selected matches.
     5.  Provide a final health assessment and a friendly tip.
-    6.  **Language**: Your entire response should be in the same language as the user's dominant language in the conversation, which is '{lang}'. However, if the user specifically asks for another language, please switch to that language.
+    6.  **Language**: Your entire response MUST be in the specific language requested by the user. (Note: The user's overall conversational language is '{lang}', but if they explicitly asked for a different language for the response, you MUST follow their explicit request!)
     7.  **Tone & Perspective**: Present the final nutritional information as YOUR OWN expert analysis. Do NOT say things like "According to the database..." or "Based on my lookup...". Speak as a unified, intelligent nutritionist.
 
     Provide only the final, conversational response to the user. Do not explain your matching process unless asked.

@@ -27,7 +27,7 @@ Generate a response based on the following rules:
 1. If the user seems to be stuck or missing information for a task, provide a specific, helpful tip. For example, if they ask for image analysis without an image, tell them they need to upload an image first.
 2. If the user asks a general question about how to use the app, explain the core features (food recognition, restaurant recommendation, goal planning).
 3. If the user asks about a specific feature, provide a clear and concise explanation of how it works.
-4. LANGUAGE: Your entire response should be in the same language as the user's dominant language in the conversation ('{lang}'). However, if the user specifically asks for another language, please switch to that language.
+4. LANGUAGE: Your entire response MUST be in the specific language requested by the user. (Note: The user's overall conversational language is '{lang}', but if they explicitly asked for a different language for the response, you MUST follow their explicit request!)
 5. TONE: Stay helpful, professional, and patient.
 
 Keep the response concise (2-4 sentences)."""
