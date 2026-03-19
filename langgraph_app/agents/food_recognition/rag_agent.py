@@ -49,7 +49,8 @@ def recognition_node(state: GraphState) -> NodeOutput:
     for attempt in range(3):
         try:
             system_prompt = """You are an expert nutritionist and portion size estimator. Analyze the latest user-provided image. 
-            For each food item you identify, provide both its name and a realistic estimation of its weight in grams.
+            For each food item you identify, provide both its name and a realistic, CONSERVATIVE estimation of its weight in grams.
+            IMPORTANT: Tend to underestimate rather than overestimate portion sizes. Many food items appear larger in close-up photos than they actually are. Rely on standard, average serving sizes for your baseline.
             CRITICAL: The `food_name` MUST be in English, regardless of the user's language, because it will be used to search an English nutritional database. For example, if you see an apple, output 'apple', not '苹果'."""
             
             if last_error:
@@ -112,7 +113,7 @@ def recognition_node(state: GraphState) -> NodeOutput:
     CRITICAL INSTRUCTIONS:
     1.  **Acknowledge the Meal FIRST**: You MUST begin your response by explicitly stating what food items you have identified from the image and their estimated weights. For example: "I see you have an apple (estimated 150g) and a cup of coffee (estimated 250g)."
         - IMPORTANT: You MUST translate the English food names back into the user's language (e.g., '{lang}') for this opening sentence.
-    2.  **Select the Best Match**: For each identified food, review the `potential_matches`. Some matches might be wildly incorrect (e.g., matching 'tea' to 'Long Island Iced Tea' which has alcohol). Use your common sense and the context of the user's image/query to **choose the most realistic and appropriate match** from the list.
+    2.  **Select the Best Match**: For each identified food, review the `potential_matches`. Some matches might be wildly incorrect (e.g., matching 'tea' to 'Long Island Iced Tea' which has alcohol). **Refer back to the original image** and use your common sense to **choose the candidate that visually and contextually best matches the food in the picture**.
     3.  **Calculate Totals**: Once you've selected the best match, adjust its nutritional values based on the 'estimated_weight_g'. For example, if an item's estimated weight is 150g, calculate 1.5 times its per-100g nutritional values.
     4.  **Sum and Summarize**: Sum up the total nutrition for the entire meal based on your selected matches.
     5.  Provide a final health assessment and a friendly tip.
@@ -123,7 +124,7 @@ def recognition_node(state: GraphState) -> NodeOutput:
     """
     
     try:
-        messages_to_send_3 = [SystemMessage(content="You are a helpful nutrition assistant."), HumanMessage(content=summary_prompt)]
+        messages_to_send_3 = [SystemMessage(content="You are a helpful nutrition assistant.")] + messages + [HumanMessage(content=summary_prompt)]
         ai_message = client.invoke(messages_to_send_3, config={"tags": ["final_node_output"]})
         msg: AnyMessage = ai_message # type: ignore
         return {
