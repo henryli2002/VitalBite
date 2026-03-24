@@ -8,11 +8,12 @@ from langgraph_app.orchestrator.nodes.guardrails import (
     output_guardrail_node,
 )
 from langgraph_app.orchestrator.nodes.router import intent_router_node
-from langgraph_app.agents.food_recognition.rag_agent import recognition_node
+from langgraph_app.agents.food_recognition.agent import recognition_node
 from langgraph_app.agents.food_recommendation.agent import food_recommendation_node
 from langgraph_app.agents.chitchat.agent import chitchat_node
 from langgraph_app.agents.tutorial.agent import tutorial_node
 from langgraph_app.agents.goalplanning.agent import goalplanning_node
+
 
 def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
     """Condition function to check for safety."""
@@ -21,23 +22,31 @@ def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
         return "unsafe"
     return "safe"
 
-def route_by_intent(state: GraphState) -> Literal[
-    "recognition", "recommendation", "chitchat", "tutorial", "goalplanning"
-]:
+
+def route_by_intent(
+    state: GraphState,
+) -> Literal["recognition", "recommendation", "chitchat", "tutorial", "goalplanning"]:
     """Condition function to route based on intent."""
     analysis = state.get("analysis", {})
     intent = analysis.get("intent", "chitchat")
-    
-    # Fallback in case "guardrails" or other invalid intent somehow leaks through
-    if intent not in ["recognition", "recommendation", "chitchat", "tutorial", "goalplanning"]:
-        return "chitchat"
-        
-    return intent # type: ignore
 
-def create_graph(): # type: ignore
+    # Fallback in case "guardrails" or other invalid intent somehow leaks through
+    if intent not in [
+        "recognition",
+        "recommendation",
+        "chitchat",
+        "tutorial",
+        "goalplanning",
+    ]:
+        return "chitchat"
+
+    return intent  # type: ignore
+
+
+def create_graph():  # type: ignore
     """Create and configure the LangGraph workflow."""
     workflow = StateGraph(GraphState)
-    
+
     # Add nodes
     workflow.add_node("input_guardrail", input_guardrail_node)
     workflow.add_node("router", intent_router_node)
@@ -84,8 +93,9 @@ def create_graph(): # type: ignore
         should_continue,
         {"unsafe": END, "safe": END},
     )
-    
+
     return workflow.compile()
+
 
 # Create the graph instance
 graph = create_graph()
