@@ -2,9 +2,9 @@
 
 from typing import Dict, Any, Literal
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
-from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.tracked_llm import get_tracked_llm
 from langgraph_app.config import config
-from langgraph_app.utils.logger import setup_logger
+from langgraph_app.utils.logger import get_logger
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph_app.utils.utils import (
@@ -16,11 +16,15 @@ import re
 from typing import Tuple
 from time import sleep
 
-logger = setup_logger(__name__)
+logger = get_logger(__name__)
+
 
 class IntentAnalysis(BaseModel):
     """Structured output for intent routing."""
-    intent: Literal["recognition", "recommendation", "chitchat", "tutorial", "goalplanning"]
+
+    intent: Literal[
+        "recognition", "recommendation", "chitchat", "tutorial", "goalplanning"
+    ]
     confidence: float
     reasoning: str
 
@@ -30,9 +34,9 @@ def intent_router_node(state: GraphState) -> NodeOutput:
     Route user input to appropriate agent based on intent.
     This router focuses only on the high-level user goal.
     """
-    client = get_llm_client(module="router")
+    client = get_tracked_llm(module="router", node_name="intent_router")
     messages = state.get("messages", [])
-    
+
     current_hour = time.localtime().tm_hour
     current_minute = time.localtime().tm_min
     current_time = current_hour + current_minute / 60.0
@@ -64,43 +68,50 @@ Respond with a JSON object containing:
         try:
             structured_llm = client.with_structured_output(IntentAnalysis)
             messages_to_send = [SystemMessage(content=system_prompt)] + messages
-            
+
             if last_error:
                 error_feedback = f"Your previous response failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
                 messages_to_send.append(SystemMessage(content=error_feedback))
-                
+
             result = structured_llm.invoke(messages_to_send, config={"callbacks": []})
-            
-            logger.info(f"[router] Intent detected: {result.intent} (confidence: {result.confidence})")
-            
+
+            logger.info(
+                f"[router] Intent detected: {result.intent} (confidence: {result.confidence})"
+            )
+
             return {
                 "analysis": {
                     "intent": result.intent,
                     "safety_safe": True,
                     "safety_reason": None,
                 },
-                "debug_logs": [{
-                    "node": "router",
-                    "status": "success",
-                    "llm_response": result.model_dump() if hasattr(result, 'model_dump') else {}
-                }]
+                "debug_logs": [
+                    {
+                        "node": "router",
+                        "status": "success",
+                        "llm_response": result.model_dump()
+                        if hasattr(result, "model_dump")
+                        else {},
+                    }
+                ],
             }
         except Exception as e:
             last_error = e
-            logger.warning(f"[router] Intent routing failed on attempt {attempt + 1}: {e}")
+            logger.warning(
+                f"[router] Intent routing failed on attempt {attempt + 1}: {e}"
+            )
             if attempt < 2:
                 sleep(1)
 
-    logger.error(f"[router] Intent routing ultimately failed after retries: {last_error}", exc_info=True)
+    logger.error(
+        f"[router] Intent routing ultimately failed after retries: {last_error}",
+        exc_info=True,
+    )
     return {
         "analysis": {
             "intent": "chitchat",
             "safety_safe": True,
             "safety_reason": None,
         },
-        "debug_logs": [{
-            "node": "router",
-            "status": "error",
-            "error": str(last_error)
-        }]
+        "debug_logs": [{"node": "router", "status": "error", "error": str(last_error)}],
     }

@@ -13,7 +13,7 @@ from langgraph_app.orchestrator.nodes.guardrails.config import (
 from langgraph_app.orchestrator.nodes.guardrails.scorer import get_scorer
 from langgraph_app.orchestrator.nodes.guardrails.responses import get_standard_response
 from langgraph_app.orchestrator.nodes.guardrails.normalizer import TextNormalizer
-from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.tracked_llm import get_tracked_llm
 from langgraph_app.utils.logger import setup_logger
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -164,7 +164,7 @@ def _llm_safety_check(
     regex_score,
 ) -> NodeOutput:
     """Secondary LLM-based safety check."""
-    client = get_llm_client(module="guardrail")
+    client = get_tracked_llm(module="guardrail", node_name="guardrail")
 
     system_prompt = """Analyze the following text for harmful, inappropriate, or unsafe content.
 
