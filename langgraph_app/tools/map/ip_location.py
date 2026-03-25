@@ -1,8 +1,9 @@
 import requests
-import logging
 from typing import Optional, Tuple
+from langgraph_app.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
 
 def get_location_from_ip() -> Optional[Tuple[float, float]]:
     """

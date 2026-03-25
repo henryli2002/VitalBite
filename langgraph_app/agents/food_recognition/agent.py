@@ -5,10 +5,10 @@ workflows, using a RAG-based approach for high accuracy.
 
 import json
 import time
-import logging
 from datetime import datetime
+from langgraph_app.utils.logger import get_logger
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
-from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.tracked_llm import get_tracked_llm
 from langgraph_app.tools.nutrition.fndds import fndds_nutrition_search_tool
 
 # from langgraph_app.tools.vision.spatial import estimate_volume_from_two_images_tool
@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from typing import List
 from langgraph_app.utils.utils import get_dominant_language
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # --- Pydantic Schemas ---
@@ -64,7 +64,9 @@ def recognition_node(state: GraphState) -> NodeOutput:
     5. LLM generates final summary
     """
     messages = state.get("messages", [])
-    client = get_llm_client(module="food_recognition_rag")
+    client = get_tracked_llm(
+        module="food_recognition_rag", node_name="food_recognition"
+    )
     lang = get_dominant_language(messages)
 
     intent = state.get("analysis", {}).get("intent")
