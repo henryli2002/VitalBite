@@ -1,7 +1,7 @@
 """Pydantic models for the WABI Chat Web API."""
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
@@ -16,7 +16,20 @@ class UserInfo(BaseModel):
     name: str
     created_at: str
     last_active: str
-    message_count: int = 0 
+    message_count: int = 0
+
+
+class UserProfile(BaseModel):
+    """User profile / personal information."""
+    name: Optional[str] = None
+    age: Optional[int] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    gender: Optional[str] = None
+    health_conditions: Optional[str] = None
+    dietary_preferences: Optional[str] = None
+    allergies: Optional[str] = None
+    fitness_goals: Optional[str] = None
 
 
 class ChatMessage(BaseModel):

@@ -24,17 +24,27 @@ async def goalplanning_node(state: GraphState) -> NodeOutput:
 
     lang = get_dominant_language(messages)
 
-    goalplanning_prompt = f"""You are a nutritional assistant helping users plan their diet and eating goals.
+    user_profile = state.get("user_profile")
+    profile_context = ""
+    if user_profile:
+        profile_context = "\n\nUser Profile & Health Information:\n" + "\n".join(
+            f"- {k.replace('_', ' ').title()}: {v}" for k, v in user_profile.items() if v
+        )
 
-Generate a response based on the following rules:
-1. Focus on long-term planning. Help the user define their goals (e.g., weight loss, muscle gain, balanced diet).
-2. Incorporate the user's history provided in the conversation context. This includes previous meals, stated preferences, and personal data.
-3. Provide actionable suggestions. Instead of just giving information, suggest concrete plans, meal ideas, or next steps.
-4. Do not give medical advice. If the user asks for medical advice, gently decline and suggest they consult a doctor.
-5. LANGUAGE: Your entire response MUST be in the specific language requested by the user. (Note: The user's overall conversational language is '{lang}', but if they explicitly asked for a different language for the response, you MUST follow their explicit request!)
-6. TONE: Stay encouraging, supportive, and informative.
+    goalplanning_prompt = f"""[ROLE]
+You are WABI, an expert nutritional planner and long-term health coach.
 
-Keep the response concise (2-4 sentences)."""
+[OBJECTIVE]
+Help the user define and achieve actionable dietary goals based on their history and profile.
+
+[CONTEXT]{profile_context}
+
+[CONSTRAINTS]
+1. ACTIONABILITY: Provide concrete plans or next steps, not just general facts. Recommend specific foods or habit changes.
+2. MEDICAL BOUNDARY: Never give medical advice; refer to a doctor for clinical issues.
+3. PERSONALIZATION: You MUST strictly adhere to the 'User Profile' constraints (health conditions, allergies). Acknowledge these constraints in your recommendations.
+4. CONCISENESS: Keep responses impactful and focused (2-4 sentences).
+5. LANGUAGE: Strict adherence to the user's language ('{lang}'), unless explicitly overridden by their latest message."""
 
     final_response = ""
     last_error: Exception | None = None

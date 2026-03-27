@@ -46,6 +46,21 @@ const dom = {
     modalNameInput: $('#modal-name-input'),
     modalCancel: $('#modal-cancel'),
     modalConfirm: $('#modal-confirm'),
+    btnProfile: $('#btn-profile'),
+    profilePanel: $('#profile-panel'),
+    drawerBackdrop: $('#drawer-backdrop'),
+    btnCloseProfile: $('#btn-close-profile'),
+    btnSaveProfile: $('#btn-save-profile'),
+    profInputs: {
+        age: $('#prof-age'),
+        height_cm: $('#prof-height'),
+        weight_kg: $('#prof-weight'),
+        gender: $('#prof-gender'),
+        health_conditions: $('#prof-health'),
+        dietary_preferences: $('#prof-diet'),
+        allergies: $('#prof-allergies'),
+        fitness_goals: $('#prof-goals'),
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -337,6 +352,85 @@ function clearImagePreview() {
 }
 
 // ---------------------------------------------------------------------------
+// Profile Management
+// ---------------------------------------------------------------------------
+
+async function openProfilePanel() {
+    dom.profilePanel.classList.remove('hidden');
+    dom.drawerBackdrop.classList.remove('hidden');
+    await loadProfile();
+}
+
+function closeProfilePanel() {
+    dom.profilePanel.classList.add('hidden');
+    dom.drawerBackdrop.classList.add('hidden');
+}
+
+async function toggleProfilePanel() {
+    if (dom.profilePanel.classList.contains('hidden')) {
+        await openProfilePanel();
+    } else {
+        closeProfilePanel();
+    }
+}
+
+async function loadProfile() {
+    if (!state.activeUserId) return;
+    try {
+        const profile = await apiGet(`/api/users/${state.activeUserId}/profile`);
+        dom.profInputs.age.value = profile.age || '';
+        dom.profInputs.height_cm.value = profile.height_cm || '';
+        dom.profInputs.weight_kg.value = profile.weight_kg || '';
+        dom.profInputs.gender.value = profile.gender || '';
+        dom.profInputs.health_conditions.value = profile.health_conditions || '';
+        dom.profInputs.dietary_preferences.value = profile.dietary_preferences || '';
+        dom.profInputs.allergies.value = profile.allergies || '';
+        dom.profInputs.fitness_goals.value = profile.fitness_goals || '';
+    } catch (e) {
+        console.error('Failed to load profile', e);
+    }
+}
+
+async function saveProfile() {
+    if (!state.activeUserId) return;
+    const btn = dom.btnSaveProfile;
+    const oldText = btn.textContent;
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+
+    const data = {
+        age: parseInt(dom.profInputs.age.value) || null,
+        height_cm: parseFloat(dom.profInputs.height_cm.value) || null,
+        weight_kg: parseFloat(dom.profInputs.weight_kg.value) || null,
+        gender: dom.profInputs.gender.value || null,
+        health_conditions: dom.profInputs.health_conditions.value || null,
+        dietary_preferences: dom.profInputs.dietary_preferences.value || null,
+        allergies: dom.profInputs.allergies.value || null,
+        fitness_goals: dom.profInputs.fitness_goals.value || null,
+    };
+
+    try {
+        await fetch(`/api/users/${state.activeUserId}/profile`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        btn.textContent = 'Saved!';
+        setTimeout(() => {
+            btn.textContent = oldText;
+            btn.disabled = false;
+        }, 1500);
+    } catch (e) {
+        console.error('Failed to save profile', e);
+        btn.textContent = 'Error';
+        setTimeout(() => {
+            btn.textContent = oldText;
+            btn.disabled = false;
+        }, 1500);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Message Rendering
 // ---------------------------------------------------------------------------
 
@@ -492,6 +586,12 @@ dom.btnBack.addEventListener('click', () => {
 
 // Delete
 dom.btnDeleteChat.addEventListener('click', deleteCurrentUser);
+
+// Profile
+dom.btnProfile.addEventListener('click', toggleProfilePanel);
+dom.btnCloseProfile.addEventListener('click', closeProfilePanel);
+dom.drawerBackdrop.addEventListener('click', closeProfilePanel);
+dom.btnSaveProfile.addEventListener('click', saveProfile);
 
 // Search
 dom.searchInput.addEventListener('input', (e) => {

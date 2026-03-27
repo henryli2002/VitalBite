@@ -49,19 +49,32 @@ async def intent_router_node(state: GraphState) -> NodeOutput:
     else:
         meal_time = "not meal time"
 
-    system_prompt = f"""Analyze the user's intent based on the entire conversation history. Your goal is to identify the user's primary goal, not the method to achieve it.
+    # Build profile context for routing awareness
+    user_profile = state.get("user_profile")
+    profile_context = ""
+    if user_profile:
+        profile_context = "\n\nUser Profile & Health Information:\n" + "\n".join(
+            f"- {k.replace('_', ' ').title()}: {v}" for k, v in user_profile.items() if v
+        )
 
-Determine the intent based on these rules:
-1.  "recognition": If the user's primary goal is to identify food, get nutritional info, or analyze a meal from one or more images. (Important: Only use this if there is actually an image of food provided. If they ask to identify a food but provide NO image, use "tutorial").
-2.  "recommendation": If the user is asking about restaurants, places to eat, or food recommendations. ALSO use this if the user expresses hunger, fatigue, or a mood that strongly implies they need food recommendations right now. Also consider it's {current_hour}:{current_minute:02d} which is {meal_time}.
-3.  "goalplanning": If the user wants to plan their diet, set eating goals, or discuss long-term nutrition.
-4.  "tutorial": If the user asks how to use the app, for instructions, OR if they ask for image recognition but there are NO images provided in the entire conversation. ALSO use this if the user provides a food image but uses very vague or weak recognition language (e.g. "I want something like this"), to ask them if they want a recommendation or something else. ALSO use this if the user input is extremely short, minimal, noisy, or meaningless (like just emojis or random symbols), so we can guide them on how to use the assistant.
-5.  "chitchat": For general conversation, greetings, follow-up questions not tied to a specific feature, off-topic questions, or if the user wants to end the conversation. ALSO use this if an image is provided but it is completely unrelated to food (e.g., a car, a landscape, a pet) or is so severely blurry/dark that no objects can be discerned. This is the default.
+    system_prompt = f"""[ROLE]
+You are the intent router for WABI, an AI food assistant.
 
-Respond with a JSON object containing:
-- "intent": one of ["recognition", "recommendation", "goalplanning", "tutorial", "chitchat"]
-- "confidence": float between 0.0 and 1.0
-- "reasoning": brief explanation of why this intent was chosen."""
+[OBJECTIVE]
+Identify the user's primary goal based on the conversation history.
+
+[CONTEXT]
+Current Time: {current_hour}:{current_minute:02d} ({meal_time}){profile_context}
+
+[INTENT RULES]
+1. "recognition": Goal is to identify food/nutrition. STRICT REQ: There MUST be a valid food image.
+2. "recommendation": Finding places to eat. Triggers on explicit requests or implicit signs of hunger during meal times.
+3. "goalplanning": Diet planning, habit building, and long-term nutrition goals.
+4. "tutorial": User needs help, asks for image recognition without an image, provides vague inputs ("I want this" without context), or inputs meaningless noise.
+5. "chitchat": Default. Greetings, unrelated topics, or non-food/blurry images.
+
+[CONSTRAINTS]
+Output exactly matching the requested JSON schema (intent, confidence, reasoning)."""
 
     last_error: Exception | None = None
     for attempt in range(3):

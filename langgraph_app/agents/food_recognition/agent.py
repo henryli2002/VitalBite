@@ -78,13 +78,30 @@ async def recognition_node(state: GraphState) -> NodeOutput:
     last_error = None
     structured_llm = client.with_structured_output(FoodAnalysis)
 
+    # --- Profile Setup ---
+    user_profile = state.get("user_profile")
+    profile_context = ""
+    if user_profile:
+        profile_context = "\n\nUser Profile & Health Information:\n" + "\n".join(
+            f"- {k.replace('_', ' ').title()}: {v}" for k, v in user_profile.items() if v
+        )
+
     # --- Step 1: LLM identifies food names ---
     logger.info("Step 1: Identifying food names from image...")
     for attempt in range(3):
         try:
-            system_prompt = """You are an expert nutritionist. Analyze the latest user-provided image and identify all food items.
-            For each food item, provide ONLY its name in English.
-            CRITICAL: The `food_name` MUST be in English, regardless of the user's language, because it will be used to search an English nutritional database."""
+            system_prompt = f"""[ROLE]
+You are WABI, an expert nutritionist.
+
+[OBJECTIVE]
+Analyze the user-provided image and identify all food items.
+
+[CONTEXT]{profile_context}
+
+[CONSTRAINTS]
+1. OUTPUT: Provide ONLY the name of each food item.
+2. LANGUAGE: The `food_name` MUST strictly be in English, regardless of the user's language, for database searching.
+3. SCHEMA: Output exactly matching the JSON schema."""
 
             if last_error:
                 system_prompt += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
@@ -183,22 +200,17 @@ async def recognition_node(state: GraphState) -> NodeOutput:
     logger.info("Step 2.5: Estimating portions...")
     portion_llm = client.with_structured_output(PortionAnalysis)
 
-    portion_prompt = f"""Analyze the user's meal image and estimate the number of pieces/portions.
+    portion_prompt = f"""[OBJECTIVE]
+Analyze the user's meal image and estimate portions.
 
-IMPORTANT:
-The database provides the weight for ONE piece/slice/fry, NOT for a full serving.
-
+[DATA]
+Database Results:
 {rag_results}
 
-For each food above:
-1. Check the "standard_portion_description" - it tells you the weight of ONE unit
-2. Look at the image and count how many pieces you see
-3. The number you count is your answer (num_portions)
-
-Note: A typical serving of "1 piece" foods (fries, chips, etc.) is often 10-30 pieces. 
-A typical serving of "1 cup" foods is 0.5-2 cups.
-
-Provide num_portions as a decimal number (e.g., 15.0 for 15 pieces, 1.5 for 1.5 cups)."""
+[CONSTRAINTS]
+1. ONE PIECE RULE: The database weight is for ONE unit (piece/slice/fry), not a full serving.
+2. COUNTING: Check the "standard_portion_description" and count exactly how many of those units you see in the image.
+3. OUTPUT: Provide num_portions as a decimal number (e.g., 15.0 for 15 pieces, 1.5 for 1.5 cups)."""
 
     portion_estimates = []
     for attempt in range(3):
@@ -277,28 +289,29 @@ Provide num_portions as a decimal number (e.g., 15.0 for 15 pieces, 1.5 for 1.5 
     # --- Step 4: LLM generates summary ---
     step_start = time.time()
     logger.info("Step 4: Generating final summary...")
-    summary_prompt = f"""You are a helpful nutrition assistant. We have analyzed the user's meal.
-    Here is the data: food name, number of portions, standard portion weight, calculated weight, and potential matches:
-    {json.dumps(all_nutrition_results, indent=2, ensure_ascii=False)}
+    summary_prompt = f"""[DATA]
+{json.dumps(all_nutrition_results, indent=2, ensure_ascii=False)}
 
-    Your task is to synthesize this into a single, easy-to-understand summary.
-    
-    CRITICAL INSTRUCTIONS:
-    1.  **Acknowledge the Meal FIRST**: State what food items you identified and their calculated weights.
-        - Translate English food names into the user's language ('{lang}').
-    2.  **Select the Best Match**: Review `potential_matches` and choose the one that best matches the food in the image.
-    3.  **Calculate Totals**: Use the 'calculated_weight_g' exactly as provided. Multiply per-100g nutritional values by (calculated_weight_g / 100).
-    4.  **Sum and Summarize**: Calculate total nutrition for the entire meal.
-    5.  Provide a final health assessment and a friendly tip.
-    6.  **Language**: Your response MUST be in '{lang}'.
-    7.  **Tone & Perspective**: Present the final nutritional information as YOUR OWN expert analysis.
-
-    Provide only the final, conversational response to the user. Do not explain your matching process unless asked.
-    """
+[TASK]
+Synthesize this meal data into a single, easy-to-understand summary."""
 
     try:
         messages_to_send_3 = (
-            [SystemMessage(content="You are a helpful nutrition assistant.")]
+            [SystemMessage(content=f"""[ROLE]
+You are WABI, an expert nutrition assistant.
+
+[OBJECTIVE]
+Summarize the user's meal and provide a nutritional assessment.
+
+[CONTEXT]{profile_context}
+
+[CONSTRAINTS]
+1. ACKNOWLEDGE: MUST state food items identified and calculated weights first.
+2. TRANSLATE: Translate English food names into the user's language ('{lang}').
+3. COMPUTE: Use 'calculated_weight_g' exactly. Multiply per-100g nutritional values by (calculated_weight_g / 100). Sum total nutrition for the entire meal.
+4. PERSONALIZATION: CRITICAL - Explicitly evaluate the meal against the 'User Profile'. Call out if it violates allergies or helps their goals.
+5. LANGUAGE: The response MUST be in '{lang}'.
+6. TONE: Present as YOUR OWN expert analysis. Be concise and conversational.""")]
             + messages
             + [HumanMessage(content=summary_prompt)]
         )
