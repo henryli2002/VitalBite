@@ -26,6 +26,7 @@ class RecommendationQuery(BaseModel):
     )
     dietary_restrictions: List[str] = Field(default_factory=list)
     price_range: str | None = Field(description="budget|moderate|expensive or null")
+    count: int | None = Field(5, description="The number of restaurant recommendations requested by the user, default is 5")
     # TODO: Add logic to receive precise lat/lng from frontend after prompting user for location permission
     # lat: float | None = Field(None, description="latitude if provided in context")
     # lng: float | None = Field(None, description="longitude if provided in context")
@@ -137,6 +138,7 @@ Your response must be a JSON object with the requested schema. Ensure your respo
                 "radius_km": query_params.radius_km or 5.0,
                 "lat": final_lat,
                 "lng": final_lng,
+                "max_results": query_params.count or 5,
             }
         )
 

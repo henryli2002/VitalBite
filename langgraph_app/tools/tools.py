@@ -15,6 +15,7 @@ class SearchRestaurantsInput(BaseModel):
     radius_km: Optional[float] = Field(5.0, description="The search radius in kilometers.")
     lat: Optional[float] = Field(None, description="The user's current latitude, if available.")
     lng: Optional[float] = Field(None, description="The user's current longitude, if available.")
+    max_results: Optional[int] = Field(5, description="The maximum number of results to return.")
 
 
 @tool("get_user_location_by_ip")
@@ -37,7 +38,8 @@ def search_restaurants_tool(
     cuisine_type: Optional[str] = None,
     radius_km: Optional[float] = 5.0,
     lat: Optional[float] = None,
-    lng: Optional[float] = None
+    lng: Optional[float] = None,
+    max_results: Optional[int] = 5
 ) -> str:
     """
     Search for restaurants using Google Maps API based on location, cuisine, and optional coordinates.
@@ -52,7 +54,8 @@ def search_restaurants_tool(
         location=location,
         cuisine_type=cuisine_type,
         radius_km=radius_km,
-        lat_lng=lat_lng
+        lat_lng=lat_lng,
+        max_results=max_results
     )
 
     if not results:
