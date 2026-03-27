@@ -73,7 +73,7 @@ langgraph_app/
 ### 4.1 状态管理 (State Management)
 系统使用 `GraphState` (TypedDict) 维护全局上下文，贯穿整个请求生命周期。
 - **Input Layer**: `text`, `image_data`, `source`
-- **Context Layer**: `session_id`, `patient_id`
+- **Context Layer**: `session_id`, `user_id`
 - **Analysis Layer**: `intent`, `safety_status`
 - **Output Layer**: `final_response`,`food_recommendation`,`food_recognition`
 

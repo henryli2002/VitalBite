@@ -35,7 +35,7 @@ def _add_timestamps(left: List[str], right: List[str]) -> List[str]:
 class GraphState(TypedDict, total=False):
     """Main state structure for the LangGraph workflow."""
     # Context layer
-    patient_id: Optional[str]
+    user_id: Optional[str]
     session_id: str
     
     # Analysis layer
@@ -56,7 +56,7 @@ class GraphState(TypedDict, total=False):
 
 # Standardized return type for all nodes
 class NodeOutput(TypedDict, total=False):
-    patient_id: Optional[str]
+    user_id: Optional[str]
     session_id: str
     analysis: AnalysisData
     recognition_result: Optional[dict]

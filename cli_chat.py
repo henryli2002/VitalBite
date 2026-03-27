@@ -163,7 +163,7 @@ def process_queue():
         initial_state: dict = {
             "messages": current_messages,
             "session_id": session_id,
-            "patient_id": "cli_test_user",
+            "user_id": "cli_test_user",
         }
 
         try:
