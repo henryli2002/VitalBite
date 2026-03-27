@@ -140,11 +140,9 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                 else:
                     content = incoming.content
 
-                # Process through LangGraph (run in thread to avoid blocking)
+                # Process through LangGraph natively (all nodes async/threaded inside)
                 graph = get_graph()
-                ai_response = await asyncio.to_thread(
-                    _sync_process_message, user_id, content, graph
-                )
+                ai_response = await chat_manager.process_message(user_id, content, graph)
 
                 # Send AI response
                 response = WSOutgoing(
@@ -170,18 +168,6 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
         logger.error(f"WebSocket error for {user_id}: {e}", exc_info=True)
     finally:
         active_connections.pop(user_id, None)
-
-
-def _sync_process_message(user_id: str, content, graph) -> str:
-    """Synchronous wrapper for chat_manager.process_message (used in to_thread)."""
-    import asyncio
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(
-            chat_manager.process_message(user_id, content, graph)
-        )
-    finally:
-        loop.close()
 
 
 # ---------------------------------------------------------------------------

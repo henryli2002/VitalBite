@@ -10,12 +10,12 @@ from langgraph_app.utils.utils import (
     get_dominant_language,
 )
 from datetime import datetime
-from time import sleep
+import asyncio
 
 logger = get_logger(__name__)
 
 
-def goalplanning_node(state: GraphState) -> NodeOutput:
+async def goalplanning_node(state: GraphState) -> NodeOutput:
     """
     Generate a helpful response to user questions about goal planning.
     """
@@ -43,7 +43,7 @@ Keep the response concise (2-4 sentences)."""
     for attempt in range(3):
         try:
             messages_to_send = [SystemMessage(content=goalplanning_prompt)] + messages
-            ai_message = client.invoke(
+            ai_message = await client.ainvoke(
                 messages_to_send, config={"tags": ["final_node_output"]}
             )
             break
@@ -51,7 +51,7 @@ Keep the response concise (2-4 sentences)."""
             last_error = e
             logger.warning(f"[goalplanning] Generation failed on attempt {attempt + 1}: {e}")
             if attempt < 2:
-                sleep(1)
+                await asyncio.sleep(1)
 
     if not ai_message:
         fallback = (

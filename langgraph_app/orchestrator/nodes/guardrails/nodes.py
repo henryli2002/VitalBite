@@ -4,6 +4,7 @@ This module provides the main entry points for the guardrail system.
 """
 
 from typing import Any
+import asyncio
 
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.orchestrator.nodes.guardrails.config import (
@@ -58,7 +59,7 @@ def _extract_text(obj: Any) -> str:
     return str(content)
 
 
-def _check_safety(
+async def _check_safety(
     text_to_check: str,
     intent: Any,
     node_name: str,
@@ -154,10 +155,10 @@ def _check_safety(
             ],
         }
 
-    return _llm_safety_check(text_to_check, intent, node_name, security_score)
+    return await _llm_safety_check(text_to_check, intent, node_name, security_score)
 
 
-def _llm_safety_check(
+async def _llm_safety_check(
     text_to_check: str,
     intent: Any,
     node_name: str,
@@ -196,7 +197,7 @@ Be lenient with normal food-related queries, even if they mention dietary restri
                 error_feedback = f"Your previous response failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
                 messages_to_send.append(SystemMessage(content=error_feedback))
 
-            result = structured_llm.invoke(messages_to_send, config={"callbacks": []})
+            result = await structured_llm.ainvoke(messages_to_send, config={"callbacks": []})
 
             if not result.safe:
                 logger.warning(
@@ -254,9 +255,7 @@ Be lenient with normal food-related queries, even if they mention dietary restri
                 f"[{node_name}] Guardrail LLM check failed on attempt {attempt + 1}: {e}"
             )
             if attempt < 2:
-                import time
-
-                time.sleep(1)
+                await asyncio.sleep(1)
 
     # On error, default to safe but log the issue
     logger.error(
@@ -281,7 +280,7 @@ Be lenient with normal food-related queries, even if they mention dietary restri
     }
 
 
-def input_guardrail_node(state: GraphState) -> NodeOutput:
+async def input_guardrail_node(state: GraphState) -> NodeOutput:
     """
     Check the user's input for harmful content and prompt injection.
     Only checks the latest message to avoid false positives from history.
@@ -293,10 +292,10 @@ def input_guardrail_node(state: GraphState) -> NodeOutput:
     text_to_check = _extract_text(latest_message)
 
     intent = state.get("analysis", {}).get("intent", "chitchat")
-    return _check_safety(text_to_check, intent, "input_guardrail", messages)
+    return await _check_safety(text_to_check, intent, "input_guardrail", messages)
 
 
-def output_guardrail_node(state: GraphState) -> NodeOutput:
+async def output_guardrail_node(state: GraphState) -> NodeOutput:
     """
     Check the agent's final response for harmful content.
     """
@@ -309,4 +308,4 @@ def output_guardrail_node(state: GraphState) -> NodeOutput:
 
     text_to_check = _extract_text(latest_ai_message) if latest_ai_message else ""
     intent = state.get("analysis", {}).get("intent", "chitchat")
-    return _check_safety(text_to_check, intent, "output_guardrail")
+    return await _check_safety(text_to_check, intent, "output_guardrail")
