@@ -3,6 +3,7 @@
 from typing import Dict, Any, List
 from datetime import datetime
 import json
+import asyncio
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.tracked_llm import get_tracked_llm
 from langgraph_app.utils.logger import get_logger
@@ -70,7 +71,7 @@ class Recommendation(BaseModel):
     )
 
 
-def food_recommendation_node(state: GraphState) -> NodeOutput:
+async def food_recommendation_node(state: GraphState) -> NodeOutput:
     """
     Provide restaurant and food recommendations based on user query.
     """
@@ -100,7 +101,7 @@ Your response must be a JSON object with the requested schema. Ensure your respo
                 if last_error_1:
                     sys_content += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_1)}. Please correct your JSON output and ensure it strictly follows the schema."
 
-                query_params = structured_llm.invoke(
+                query_params = await structured_llm.ainvoke(
                     [SystemMessage(content=sys_content)] + local_messages,
                     config={"callbacks": []},
                 )
@@ -111,9 +112,7 @@ Your response must be a JSON object with the requested schema. Ensure your respo
                     f"[food_recommendation] Extraction failed on attempt {attempt + 1}: {e}"
                 )
                 if attempt < 2:
-                    import time
-
-                    time.sleep(1)
+                    await asyncio.sleep(1)
 
         if query_params is None:
             raise last_error_1 or Exception(
@@ -131,7 +130,7 @@ Your response must be a JSON object with the requested schema. Ensure your respo
             final_lat, final_lng = ip_loc
 
         # Step 2: Get restaurant recommendations using actual tool
-        raw_result = search_restaurants_tool.invoke(
+        raw_result = await search_restaurants_tool.ainvoke(
             {
                 "location": None,  # Force no text location bias for now, rely purely on coordinates/ip
                 "cuisine_type": query_params.cuisine_type,
@@ -184,7 +183,7 @@ Your response must be a JSON object that conforms to the `Recommendation` schema
                 if last_error_2:
                     sys_content_2 += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_2)}. Please correct your JSON output and ensure it strictly follows the schema."
 
-                structured_response = structured_llm_2.invoke(
+                structured_response = await structured_llm_2.ainvoke(
                     [SystemMessage(content=sys_content_2)] + local_messages_2,
                     config={"tags": ["final_node_output"]},
                 )
@@ -195,9 +194,7 @@ Your response must be a JSON object that conforms to the `Recommendation` schema
                     f"[food_recommendation] Formatting failed on attempt {attempt + 1}: {e}"
                 )
                 if attempt < 2:
-                    import time
-
-                    time.sleep(1)
+                    await asyncio.sleep(1)
 
         if structured_response is None:
             raise last_error_2 or Exception(

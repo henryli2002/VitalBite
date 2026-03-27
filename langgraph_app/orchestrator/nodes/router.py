@@ -14,7 +14,7 @@ from langgraph_app.utils.utils import (
 import time
 import re
 from typing import Tuple
-from time import sleep
+import asyncio
 
 logger = get_logger(__name__)
 
@@ -29,7 +29,7 @@ class IntentAnalysis(BaseModel):
     reasoning: str
 
 
-def intent_router_node(state: GraphState) -> NodeOutput:
+async def intent_router_node(state: GraphState) -> NodeOutput:
     """
     Route user input to appropriate agent based on intent.
     This router focuses only on the high-level user goal.
@@ -73,7 +73,7 @@ Respond with a JSON object containing:
                 error_feedback = f"Your previous response failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
                 messages_to_send.append(SystemMessage(content=error_feedback))
 
-            result = structured_llm.invoke(messages_to_send, config={"callbacks": []})
+            result = await structured_llm.ainvoke(messages_to_send, config={"callbacks": []})
 
             logger.info(
                 f"[router] Intent detected: {result.intent} (confidence: {result.confidence})"
@@ -101,7 +101,7 @@ Respond with a JSON object containing:
                 f"[router] Intent routing failed on attempt {attempt + 1}: {e}"
             )
             if attempt < 2:
-                sleep(1)
+                await asyncio.sleep(1)
 
     logger.error(
         f"[router] Intent routing ultimately failed after retries: {last_error}",

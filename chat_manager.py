@@ -197,21 +197,22 @@ class ChatManager:
         # Save user message
         await self.store.save_message(user_id, "user", save_content, now)
 
-        # Load full history and build LangChain messages
-        history = await self.store.load_history(user_id)
-        langchain_messages = self._build_langchain_messages(history[:-1])  # exclude current msg
-        langchain_messages.append(new_msg)  # add current with full content (may include images)
+        # We NO LONGER load the full history to pass to LangGraph.
+        # LangGraph's checkpointer maintains the `messages` array for us automatically 
+        # based on the thread_id. We just pass the *new message* in the state.
 
         # Build the state for graph invocation
         session_id = f"web_{user_id}_{int(time.time())}"
         initial_state = {
-            "messages": langchain_messages,
+            "messages": [new_msg],
             "session_id": session_id,
             "user_id": user_id,
         }
 
-        # Invoke the graph
-        result = graph.invoke(initial_state)
+        config = {"configurable": {"thread_id": user_id}}
+
+        # Invoke the graph natively async
+        result = await graph.ainvoke(initial_state, config=config)
 
         # Extract AI response
         ai_text = ""

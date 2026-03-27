@@ -30,19 +30,19 @@ class Config:
         "gemini": {
             "router": {"temperature": 0.1, "top_p": 0.8},  # Router module using Gemini
             "clarification": {"temperature": 0.4, "top_p": 0.95},  # Clarification module using Gemini
-            "food_recognition": {"temperature": 0.1, "top_p": 0.9},  # Food Recognition module using Gemini
+            "food_recognition": {"temperature": 0.0, "top_p": 0.1},  # Food Recognition MUST be deterministic
             "food_recommendation": {"temperature": 0.5, "top_p": 0.95},  # Food Recommendation module using Gemini
         },
         "openai": {
             "router": {"temperature": 0.1, "top_p": 0.8},  # Router module using OpenAI
             "clarification": {"temperature": 0.4, "top_p": 0.95, "presence_penalty": 0.1},  # Clarification module using OpenAI
-            "food_recognition": {"temperature": 0.1, "top_p": 0.9},  # Food Recognition module using OpenAI
+            "food_recognition": {"temperature": 0.0, "top_p": 0.1},  # Food Recognition MUST be deterministic
             "food_recommendation": {"temperature": 0.5, "top_p": 0.95, "presence_penalty": 0.2},  # Food Recommendation module using OpenAI
         },
         "bedrock_claude": {
             "router": {"temperature": 0.1, "top_p": 0.8},  # Router module using Bedrock Claude
             "clarification": {"temperature": 0.4, "top_p": 0.95},  # Clarification module using Bedrock Claude
-            "food_recognition": {"temperature": 0.1, "top_p": 0.9},  # Food Recognition module using Bedrock Claude
+            "food_recognition": {"temperature": 0.0, "top_p": 0.1},  # Food Recognition MUST be deterministic
             "food_recommendation": {"temperature": 0.5, "top_p": 0.95},  # Food Recommendation module using Bedrock Claude
         },
     }

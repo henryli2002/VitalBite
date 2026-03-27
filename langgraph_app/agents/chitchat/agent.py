@@ -10,12 +10,12 @@ from langgraph_app.utils.utils import (
     get_dominant_language,
 )
 from datetime import datetime
-from time import sleep
+import asyncio
 
 logger = get_logger(__name__)
 
 
-def chitchat_node(state: GraphState) -> NodeOutput:
+async def chitchat_node(state: GraphState) -> NodeOutput:
     """
     Generate a friendly response for general conversation.
     """
@@ -39,7 +39,7 @@ Generate a response based on the following rules:
     for attempt in range(3):
         try:
             messages_to_send = [SystemMessage(content=system_instruction)] + messages
-            ai_message = client.invoke(
+            ai_message = await client.ainvoke(
                 messages_to_send, config={"tags": ["final_node_output"]}
             )
             break
@@ -47,7 +47,7 @@ Generate a response based on the following rules:
             last_error = e
             logger.warning(f"[chitchat] Generation failed on attempt {attempt + 1}: {e}")
             if attempt < 2:
-                sleep(1)
+                await asyncio.sleep(1)
 
     if not ai_message:
         fallback = (

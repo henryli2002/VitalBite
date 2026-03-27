@@ -5,6 +5,7 @@ workflows, using a RAG-based approach for high accuracy.
 
 import json
 import time
+import asyncio
 from datetime import datetime
 from langgraph_app.utils.logger import get_logger
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
@@ -52,7 +53,7 @@ class PortionAnalysis(BaseModel):
     )
 
 
-def recognition_node(state: GraphState) -> NodeOutput:
+async def recognition_node(state: GraphState) -> NodeOutput:
     """
     A unified node that performs food recognition with structured RAG workflow.
 
@@ -65,7 +66,7 @@ def recognition_node(state: GraphState) -> NodeOutput:
     """
     messages = state.get("messages", [])
     client = get_tracked_llm(
-        module="food_recognition_rag", node_name="food_recognition"
+        module="food_recognition", node_name="food_recognition"
     )
     lang = get_dominant_language(messages)
 
@@ -89,7 +90,7 @@ def recognition_node(state: GraphState) -> NodeOutput:
                 system_prompt += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
 
             messages_to_send = [SystemMessage(content=system_prompt)] + messages
-            food_analysis_obj = structured_llm.invoke(
+            food_analysis_obj = await structured_llm.ainvoke(
                 messages_to_send, config={"callbacks": []}
             )
             identified_foods = (
@@ -103,7 +104,7 @@ def recognition_node(state: GraphState) -> NodeOutput:
             last_error = e
             logger.error(f"Step 1 attempt {attempt + 1} failed: {e}")
             if attempt < 2:
-                time.sleep(1)
+                await asyncio.sleep(1)
 
     step_time = time.time() - step_start
     step_metrics.append(
@@ -139,8 +140,8 @@ def recognition_node(state: GraphState) -> NodeOutput:
     rag_results = []
     for food_item in identified_foods:
         try:
-            tool_result_json = fndds_nutrition_search_tool.invoke(
-                {"food_description": food_item.food_name, "top_k": 3}
+            tool_result_json = await fndds_nutrition_search_tool.ainvoke(
+                {"food_description": food_item.food_name.lower(), "top_k": 3}
             )
             tool_result = json.loads(tool_result_json)
 
@@ -203,7 +204,7 @@ Provide num_portions as a decimal number (e.g., 15.0 for 15 pieces, 1.5 for 1.5 
     for attempt in range(3):
         try:
             messages_for_portion = [SystemMessage(content=portion_prompt)] + messages
-            portion_obj = portion_llm.invoke(
+            portion_obj = await portion_llm.ainvoke(
                 messages_for_portion, config={"callbacks": []}
             )
             portion_estimates = (
@@ -216,7 +217,7 @@ Provide num_portions as a decimal number (e.g., 15.0 for 15 pieces, 1.5 for 1.5 
         except Exception as e:
             logger.error(f"Step 2.5 attempt {attempt + 1} failed: {e}")
             if attempt < 2:
-                time.sleep(1)
+                await asyncio.sleep(1)
 
     step_time = time.time() - step_start
     step_metrics.append(
@@ -301,7 +302,7 @@ Provide num_portions as a decimal number (e.g., 15.0 for 15 pieces, 1.5 for 1.5 
             + messages
             + [HumanMessage(content=summary_prompt)]
         )
-        ai_message = client.invoke(
+        ai_message = await client.ainvoke(
             messages_to_send_3, config={"tags": ["final_node_output"]}
         )
         msg: AnyMessage = ai_message

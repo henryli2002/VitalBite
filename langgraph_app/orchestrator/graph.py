@@ -2,6 +2,7 @@
 
 from typing import Literal
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.orchestrator.nodes.guardrails import (
     input_guardrail_node,
@@ -94,7 +95,8 @@ def create_graph():  # type: ignore
         {"unsafe": END, "safe": END},
     )
 
-    return workflow.compile()
+    memory = MemorySaver()
+    return workflow.compile(checkpointer=memory)
 
 
 # Create the graph instance

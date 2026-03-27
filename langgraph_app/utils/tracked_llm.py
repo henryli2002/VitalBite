@@ -98,6 +98,60 @@ class _TrackedStructuredOutput:
             )
             raise
 
+    async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
+        start_time = time.perf_counter()
+
+        try:
+            raw_result = await self._runnable.ainvoke(input, config=config, **kwargs)
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            # Extract token usage from the raw AIMessage
+            if isinstance(raw_result, dict):
+                raw_msg = raw_result.get("raw")
+                if raw_msg and hasattr(raw_msg, "usage_metadata") and raw_msg.usage_metadata:
+                    usage = raw_msg.usage_metadata
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
+                    reasoning_tokens = usage.get("output_token_details", {}).get("reasoning", 0)
+                    cache_tokens = usage.get("input_token_details", {}).get("cache_read", 0)
+
+                    log_trace(
+                        node_name=self._node_name,
+                        provider=_get_provider(self._underlying_llm),
+                        model_name=_get_model_name(self._underlying_llm) or "unknown",
+                        latency_ms=latency_ms,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        status="success",
+                        extra_meta={
+                            "reasoning_tokens": reasoning_tokens,
+                            "cache_tokens": cache_tokens,
+                            "request_id": request_id_var.get(),
+                        },
+                    )
+
+                # Return only the parsed result (Pydantic model)
+                parsed = raw_result.get("parsed")
+                if raw_result.get("parsing_error"):
+                    raise raw_result["parsing_error"]
+                return parsed
+            else:
+                # Fallback: if result is not a dict, return as-is
+                return raw_result
+
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start_time) * 1000
+            log_trace(
+                node_name=self._node_name,
+                provider=_get_provider(self._underlying_llm),
+                model_name=_get_model_name(self._underlying_llm) or "unknown",
+                latency_ms=latency_ms,
+                status="error",
+                error_msg=str(e),
+                extra_meta={"request_id": request_id_var.get()},
+            )
+            raise
+
 
 class TrackedChatModel(BaseChatModel):
     def __init__(self, llm: BaseChatModel, node_name: str = "unknown", **kwargs):
@@ -127,6 +181,34 @@ class TrackedChatModel(BaseChatModel):
 
         try:
             result = self._llm._generate(messages, stop=stop, **kwargs)
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            self._log_usage(result, latency_ms)
+            return result
+
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start_time) * 1000
+            log_trace(
+                node_name=self._node_name,
+                provider=_get_provider(self._llm),
+                model_name=_get_model_name(self._llm) or "unknown",
+                latency_ms=latency_ms,
+                status="error",
+                error_msg=str(e),
+                extra_meta={"request_id": request_id_var.get()},
+            )
+            raise
+
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        **kwargs,
+    ) -> LLMResult:
+        start_time = time.perf_counter()
+
+        try:
+            result = await self._llm._agenerate(messages, stop=stop, **kwargs)
             latency_ms = (time.perf_counter() - start_time) * 1000
 
             self._log_usage(result, latency_ms)
@@ -206,6 +288,31 @@ class TrackedChatModel(BaseChatModel):
 
         try:
             result = self._llm.invoke(input, config=config, **kwargs)
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            self._log_invoke_usage(result, latency_ms)
+            return result
+
+        except Exception as e:
+            latency_ms = (time.perf_counter() - start_time) * 1000
+            log_trace(
+                node_name=self._node_name,
+                provider=_get_provider(self._llm),
+                model_name=_get_model_name(self._llm) or "unknown",
+                latency_ms=latency_ms,
+                status="error",
+                error_msg=str(e),
+                extra_meta={"request_id": request_id_var.get()},
+            )
+            raise
+
+    async def ainvoke(
+        self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs
+    ) -> Any:
+        start_time = time.perf_counter()
+
+        try:
+            result = await self._llm.ainvoke(input, config=config, **kwargs)
             latency_ms = (time.perf_counter() - start_time) * 1000
 
             self._log_invoke_usage(result, latency_ms)
