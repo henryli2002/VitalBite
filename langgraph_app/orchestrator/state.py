@@ -36,7 +36,11 @@ class GraphState(TypedDict, total=False):
     """Main state structure for the LangGraph workflow."""
     # Context layer
     user_id: Optional[str]
+    user_name: Optional[str]
     session_id: str
+    
+    # User profile (age, height, weight, health conditions, etc.)
+    user_profile: Optional[Dict[str, Any]]
     
     # Analysis layer
     analysis: AnalysisData
@@ -57,7 +61,9 @@ class GraphState(TypedDict, total=False):
 # Standardized return type for all nodes
 class NodeOutput(TypedDict, total=False):
     user_id: Optional[str]
+    user_name: Optional[str]
     session_id: str
+    user_profile: Optional[Dict[str, Any]]
     analysis: AnalysisData
     recognition_result: Optional[dict]
     recommendation_result: Optional[dict]

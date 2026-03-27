@@ -1,119 +1,96 @@
 """Chat session and history management for multi-user conversations.
 
 Provides:
-- HistoryStore: Abstract base class for future database backends (PostgreSQL, Redis, etc.)
-- InMemoryHistoryStore: Default in-memory implementation
+- HistoryStore: Abstract base class for persistence backends
 - ChatManager: Manages user sessions and routes messages through LangGraph
 """
 
 import time
 import uuid
+import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
 
+logger = logging.getLogger("wabi.chat")
+
 
 # ---------------------------------------------------------------------------
-# Abstract History Store (for future backend extension)
+# Abstract History Store
 # ---------------------------------------------------------------------------
 
 class HistoryStore(ABC):
-    """Abstract base class for chat history persistence.
-    
-    Implement this interface to plug in PostgreSQL, Redis, MongoDB, etc.
+    """Abstract base class for chat history persistence."""
+
+    @abstractmethod
+    async def save_message(self, user_id: str, role: str, content: str, timestamp: str) -> None:
+        ...
+
+    @abstractmethod
+    async def load_history(self, user_id: str) -> List[Dict[str, Any]]:
+        ...
+
+    @abstractmethod
+    async def delete_history(self, user_id: str) -> None:
+        ...
+
+    @abstractmethod
+    async def list_users(self) -> List[Dict[str, Any]]:
+        ...
+
+    @abstractmethod
+    async def create_user(self, user_id: str, name: str) -> Dict[str, Any]:
+        ...
+
+    @abstractmethod
+    async def get_user(self, user_id: str) -> Dict[str, Any]:
+        ...
+
+    @abstractmethod
+    async def delete_user(self, user_id: str) -> bool:
+        ...
+
+    @abstractmethod
+    async def save_profile(self, user_id: str, profile: Dict[str, Any]) -> None:
+        ...
+
+    @abstractmethod
+    async def load_profile(self, user_id: str) -> Dict[str, Any]:
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Time boundary helpers
+# ---------------------------------------------------------------------------
+
+# Singapore / Taipei timezone (UTC+8)
+_TZ_UTC8 = timezone(timedelta(hours=8))
+_DAY_START_HOUR = 3  # 3 AM as new-day boundary
+
+
+def _get_day_boundary() -> str:
+    """Return the most recent 3:00 AM in UTC+8 as an ISO timestamp (in UTC).
+
+    If current UTC+8 time is before 3 AM, the boundary is yesterday 3 AM.
     """
+    now_utc8 = datetime.now(_TZ_UTC8)
 
-    @abstractmethod
-    async def save_message(self, user_id: str, role: str, content: str, timestamp: str) -> None:
-        """Save a single message to storage."""
-        ...
+    if now_utc8.hour < _DAY_START_HOUR:
+        # Before 3 AM — boundary is yesterday 3 AM
+        boundary_utc8 = now_utc8.replace(
+            hour=_DAY_START_HOUR, minute=0, second=0, microsecond=0
+        ) - timedelta(days=1)
+    else:
+        # At or after 3 AM — boundary is today 3 AM
+        boundary_utc8 = now_utc8.replace(
+            hour=_DAY_START_HOUR, minute=0, second=0, microsecond=0
+        )
 
-    @abstractmethod
-    async def load_history(self, user_id: str) -> List[Dict[str, Any]]:
-        """Load full message history for a user. Returns list of dicts with role, content, timestamp."""
-        ...
-
-    @abstractmethod
-    async def delete_history(self, user_id: str) -> None:
-        """Delete all messages for a user."""
-        ...
-
-    @abstractmethod
-    async def list_users(self) -> List[Dict[str, Any]]:
-        """List all users with metadata."""
-        ...
-
-    @abstractmethod
-    async def create_user(self, user_id: str, name: str) -> Dict[str, Any]:
-        """Create a new user entry."""
-        ...
-
-    @abstractmethod
-    async def delete_user(self, user_id: str) -> bool:
-        """Delete a user and their history."""
-        ...
-
-
-# ---------------------------------------------------------------------------
-# In-Memory Implementation
-# ---------------------------------------------------------------------------
-
-class InMemoryHistoryStore(HistoryStore):
-    """Default in-memory history store. Data is lost on restart."""
-
-    def __init__(self):
-        # user_id -> list of {role, content, timestamp}
-        self._messages: Dict[str, List[Dict[str, Any]]] = {}
-        # user_id -> {user_id, name, created_at, last_active}
-        self._users: Dict[str, Dict[str, Any]] = {}
-
-    async def save_message(self, user_id: str, role: str, content: str, timestamp: str) -> None:
-        if user_id not in self._messages:
-            self._messages[user_id] = []
-        self._messages[user_id].append({
-            "role": role,
-            "content": content,
-            "timestamp": timestamp,
-        })
-        # Update last_active
-        if user_id in self._users:
-            self._users[user_id]["last_active"] = timestamp
-
-    async def load_history(self, user_id: str) -> List[Dict[str, Any]]:
-        return self._messages.get(user_id, [])
-
-    async def delete_history(self, user_id: str) -> None:
-        self._messages.pop(user_id, None)
-
-    async def list_users(self) -> List[Dict[str, Any]]:
-        result = []
-        for uid, info in self._users.items():
-            result.append({
-                **info,
-                "message_count": len(self._messages.get(uid, [])),
-            })
-        return result
-
-    async def create_user(self, user_id: str, name: str) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
-        user_info = {
-            "user_id": user_id,
-            "name": name,
-            "created_at": now,
-            "last_active": now,
-        }
-        self._users[user_id] = user_info
-        self._messages[user_id] = []
-        return {**user_info, "message_count": 0}
-
-    async def delete_user(self, user_id: str) -> bool:
-        if user_id not in self._users:
-            return False
-        self._users.pop(user_id, None)
-        self._messages.pop(user_id, None)
-        return True
+    # Convert to UTC for DB comparison (timestamps are stored as UTC)
+    boundary_utc = boundary_utc8.astimezone(timezone.utc)
+    return boundary_utc.isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +99,7 @@ class InMemoryHistoryStore(HistoryStore):
 
 class ChatManager:
     """Manages multi-user chat sessions and interfaces with LangGraph.
-    
+
     Each user gets:
     - A unique user_id
     - Independent message history (stored via HistoryStore)
@@ -130,16 +107,16 @@ class ChatManager:
     """
 
     def __init__(self, store: Optional[HistoryStore] = None):
-        self.store = store or InMemoryHistoryStore()
-        # Cache of LangChain message objects for active sessions
-        self._langchain_histories: Dict[str, List[AnyMessage]] = {}
+        if store is None:
+            from db import SQLiteHistoryStore
+            store = SQLiteHistoryStore()
+        self.store = store
 
     async def create_user(self, name: Optional[str] = None) -> Dict[str, Any]:
         """Create a new user/conversation."""
         user_id = f"user_{uuid.uuid4().hex[:8]}"
         display_name = name or f"User {user_id[-4:]}"
         user_info = await self.store.create_user(user_id, display_name)
-        self._langchain_histories[user_id] = []
         return user_info
 
     async def get_users(self) -> List[Dict[str, Any]]:
@@ -148,12 +125,19 @@ class ChatManager:
 
     async def delete_user(self, user_id: str) -> bool:
         """Delete a user and their history."""
-        self._langchain_histories.pop(user_id, None)
         return await self.store.delete_user(user_id)
 
     async def get_history(self, user_id: str) -> List[Dict[str, Any]]:
         """Get message history for a user."""
         return await self.store.load_history(user_id)
+
+    async def save_profile(self, user_id: str, profile: Dict[str, Any]) -> None:
+        """Save user profile."""
+        await self.store.save_profile(user_id, profile)
+
+    async def get_profile(self, user_id: str) -> Dict[str, Any]:
+        """Load user profile."""
+        return await self.store.load_profile(user_id)
 
     def _build_langchain_messages(self, history: List[Dict[str, Any]]) -> List[AnyMessage]:
         """Convert stored history dicts to LangChain message objects."""
@@ -172,14 +156,12 @@ class ChatManager:
         graph: Any,
     ) -> str:
         """Process a user message through the LangGraph graph.
-        
-        Args:
-            user_id: The user's ID
-            content: Text string or multimodal content list
-            graph: The compiled LangGraph graph instance
-            
-        Returns:
-            The AI response text
+
+        History scoping:
+        - goalplanning: full user history
+        - all other intents: only messages since the 3 AM boundary (today)
+
+        The graph is invoked with the user's profile injected into state.
         """
         now = datetime.now(timezone.utc).isoformat()
 
@@ -190,29 +172,66 @@ class ChatManager:
         else:
             # Multimodal content (text + images)
             new_msg = HumanMessage(content=content)
-            # Extract text for storage
-            text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+            text_parts = [
+                p.get("text", "")
+                for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            ]
             save_content = " ".join(text_parts).strip() or "[Image]"
 
-        # Save user message
+        # Save user message to DB
         await self.store.save_message(user_id, "user", save_content, now)
 
-        # We NO LONGER load the full history to pass to LangGraph.
-        # LangGraph's checkpointer maintains the `messages` array for us automatically 
-        # based on the thread_id. We just pass the *new message* in the state.
+        # Load user profile and name
+        user_profile = await self.store.load_profile(user_id)
+        user_info = await self.store.get_user(user_id)
+        user_name = user_info.get("name") if user_info else None
 
-        # Build the state for graph invocation
+        # --- Phase 1: Quick intent detection with today's history ---
+        day_boundary = _get_day_boundary()
+        today_history = await getattr(self.store, "load_history_since", self.store.load_history)(user_id, day_boundary)
+        today_messages = self._build_langchain_messages(today_history)
+
+        # Build the state for FIRST invocation (router uses today's context)
         session_id = f"web_{user_id}_{int(time.time())}"
         initial_state = {
-            "messages": [new_msg],
+            "messages": today_messages,
             "session_id": session_id,
             "user_id": user_id,
+            "user_name": user_name,
+            "user_profile": user_profile if user_profile else None,
         }
+        logger.info(f"[{user_id}] Graph state built — user_name={user_name}, user_profile keys={list(user_profile.keys()) if user_profile else 'None'}")
 
-        config = {"configurable": {"thread_id": user_id}}
+        # We use a unique thread_id per invocation to avoid MemorySaver accumulation
+        # since we now manage history ourselves via SQLite.
+        invocation_id = f"{user_id}_{int(time.time() * 1000)}"
+        config = {"configurable": {"thread_id": invocation_id}}
 
-        # Invoke the graph natively async
+        # Invoke the graph
         result = await graph.ainvoke(initial_state, config=config)
+
+        # Check if the intent was goalplanning — if so, re-invoke with FULL history
+        analysis = result.get("analysis", {})
+        detected_intent = analysis.get("intent", "chitchat")
+
+        if detected_intent == "goalplanning":
+            # Re-invoke with full history for comprehensive planning
+            full_history = await self.store.load_history(user_id)
+            full_messages = self._build_langchain_messages(full_history)
+
+            full_state = {
+                "messages": full_messages,
+                "session_id": session_id,
+                "user_id": user_id,
+                "user_name": user_name,
+                "user_profile": user_profile if user_profile else None,
+            }
+            # Fresh invocation ID for the full-history run
+            full_invocation_id = f"{user_id}_full_{int(time.time() * 1000)}"
+            full_config = {"configurable": {"thread_id": full_invocation_id}}
+
+            result = await graph.ainvoke(full_state, config=full_config)
 
         # Extract AI response
         ai_text = ""
@@ -225,7 +244,7 @@ class ChatManager:
         else:
             ai_text = "Sorry, I could not process your request."
 
-        # Save AI response
+        # Save AI response to DB
         ai_timestamp = datetime.now(timezone.utc).isoformat()
         await self.store.save_message(user_id, "assistant", ai_text, ai_timestamp)
 

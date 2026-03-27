@@ -82,9 +82,22 @@ async def food_recommendation_node(state: GraphState) -> NodeOutput:
 
     lang = get_dominant_language(messages)
 
-    extraction_prompt = f"""Extract recommendation parameters from the user's query, considering the conversation history and any images provided. An image might give clues about the desired cuisine.
+    user_profile = state.get("user_profile")
+    profile_context = ""
+    if user_profile:
+        profile_context = "\n\nUser Profile & Health Information:\n" + "\n".join(
+            f"- {k.replace('_', ' ').title()}: {v}" for k, v in user_profile.items() if v
+        )
 
-Your response must be a JSON object with the requested schema. Ensure your response understands the user's dominant language ('{lang}')."""
+    extraction_prompt = f"""[OBJECTIVE]
+Extract restaurant search parameters from the user's query and conversation history.
+
+[CONTEXT]
+User Image (if any) might implicitly suggest a cuisine.
+
+[CONSTRAINTS]
+1. SCHEMA: Output exactly matching the JSON schema.
+2. LANGUAGE: Understand the user's language ('{lang}') but output standard parameters."""
 
     try:
         # Step 1: Use local messages to append extraction instruction
@@ -97,7 +110,10 @@ Your response must be a JSON object with the requested schema. Ensure your respo
 
         for attempt in range(3):
             try:
-                sys_content = "You are an expert food recommendation assistant."
+                sys_content = f"""[ROLE]
+You are WABI, an expert food recommendation assistant.
+
+[CONTEXT]{profile_context}"""
                 if last_error_1:
                     sys_content += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_1)}. Please correct your JSON output and ensure it strictly follows the schema."
 
@@ -160,15 +176,25 @@ Your response must be a JSON object with the requested schema. Ensure your respo
             }
 
         # Step 3: Format recommendations into a structured object
-        formatting_prompt = f"""Convert this restaurant list into a structured recommendation based on the user's query.
-
+        formatting_prompt = f"""[DATA]
 Restaurants:
 {json.dumps(restaurants, ensure_ascii=False, indent=2)}
 
-Your response must be a JSON object that conforms to the `Recommendation` schema. Base your summaries on the user's query and preferences. The entire response (including the localized label fields) must be in the specific language requested by the user. (Note: The user's overall conversational language is '{lang}', but if they explicitly asked for a different language for the response, you MUST follow their explicit request!)
-"""
+[TASK]
+Convert this raw restaurant list into a structured JSON `Recommendation` based on the user's query."""
 
-        system_instruction = f"You are a friendly food recommendation assistant. Provide helpful, personalized restaurant suggestions in a structured format. Your entire response should be in the user's dominant language ('{lang}'). However, if the user specifically asks for another language, please switch to that language."
+        system_instruction = f"""[ROLE]
+You are WABI, an expert food curator.
+
+[OBJECTIVE]
+Transform raw restaurant data into helpful, personalized suggestions.
+
+[CONTEXT]{profile_context}
+
+[CONSTRAINTS]
+1. PERSONALIZATION: CRITICAL - Actively reference the 'User Profile'. Highlight why these restaurants fit their goals, and explicitly warn if a restaurant conflicts with any allergies/diets!
+2. SCHEMA: Output strictly matching the requested JSON schema.
+3. LANGUAGE: The user's language is '{lang}'. Strictly abide by any explicit language requests from the user."""
 
         local_messages_2 = messages.copy()
         local_messages_2.append(HumanMessage(content=formatting_prompt))

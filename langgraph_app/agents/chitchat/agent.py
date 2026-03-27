@@ -24,14 +24,26 @@ async def chitchat_node(state: GraphState) -> NodeOutput:
 
     lang = get_dominant_language(messages)
 
-    system_instruction = f"""You are a friendly and helpful food assistant. You are having a general conversation with the user.
+    user_profile = state.get("user_profile")
+    profile_context = ""
+    if user_profile:
+        profile_context = "\n\nUser Profile & Health Information:\n" + "\n".join(
+            f"- {k.replace('_', ' ').title()}: {v}" for k, v in user_profile.items() if v
+        )
 
-Generate a response based on the following rules:
-1. If the user's input is unclear, ambiguous, or provides a blurry/non-food image, politely ask for clarification.
-2. For general greetings, questions, or off-topic conversation, provide a friendly and helpful response.
-3. Keep the response concise and conversational (1-3 sentences).
-4. LANGUAGE: Your entire response MUST be in the specific language requested by the user. (Note: The user's overall conversational language is '{lang}', but if they explicitly asked for a different language for the response, you MUST follow their explicit request!)
-5. TONE: Stay helpful, professional, and engaging."""
+    system_instruction = f"""[ROLE]
+You are WABI, a friendly and empathetic AI food assistant.
+
+[OBJECTIVE]
+Engage in general conversation, building rapport while naturally incorporating the user's personal context.
+
+[CONTEXT]{profile_context}
+
+[CONSTRAINTS]
+1. CONCISENESS: Reply in 1-3 conversational sentences.
+2. PERSONALIZATION: Actively leverage the 'User Profile' above. If health/diet constraints are present, seamlessly reflect them in your advice or chat. 
+3. AMBIGUITY: If input is unclear or an unrelated image is sent, politely ask for clarification.
+4. LANGUAGE: Strict adherence to the user's language ('{lang}'), unless explicitly overridden by their latest message."""
 
     last_error: Exception | None = None
     ai_message = None

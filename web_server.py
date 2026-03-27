@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from models import UserCreate, UserInfo, ChatMessage, WSIncoming, WSOutgoing
+from models import UserCreate, UserInfo, UserProfile, ChatMessage, WSIncoming, WSOutgoing
 from chat_manager import ChatManager
 
 # Lazy import the graph to avoid import-time side effects
@@ -101,6 +101,24 @@ async def get_history(user_id: str):
     ) for msg in history]
 
 
+@app.get("/api/users/{user_id}/profile")
+async def get_profile(user_id: str):
+    """Get user profile."""
+    profile = await chat_manager.get_profile(user_id)
+    return profile
+
+
+@app.put("/api/users/{user_id}/profile")
+async def update_profile(user_id: str, body: UserProfile):
+    """Update user profile (partial merge — only overwrites fields that are sent)."""
+    # Load existing profile first, then merge
+    existing = await chat_manager.get_profile(user_id)
+    incoming = {k: v for k, v in body.model_dump().items() if v is not None}
+    merged = {**existing, **incoming}
+    await chat_manager.save_profile(user_id, merged)
+    return {"status": "updated", "user_id": user_id, "profile": merged}
+
+
 # ---------------------------------------------------------------------------
 # WebSocket — Real-time Chat
 # ---------------------------------------------------------------------------
@@ -176,8 +194,10 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
 
 @app.on_event("startup")
 async def startup():
-    """Pre-load dotenv and log startup."""
+    """Pre-load dotenv, initialize DB, and log startup."""
     from dotenv import load_dotenv
     load_dotenv()
     logging.basicConfig(level=logging.INFO)
-    logger.info("WABI Chat Web Server started")
+    # Initialize SQLite database tables
+    await chat_manager.store.init_db()
+    logger.info("WABI Chat Web Server started (SQLite DB initialized)")
