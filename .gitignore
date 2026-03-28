@@ -62,12 +62,17 @@ Thumbs.db
 *.txt
 *.xlsx
 
-# 数据库 绝对禁止上传
+# 数据库
 *.db
-*.sqlite
-*.sqlite3
+data/
+
+# FAISS 向量库
+*.faiss
+
+# 大数据文件
+fndds_*
+*.json
 
 # 日志
 *.log
 logs/
-log/
