@@ -132,7 +132,15 @@ class ChatManager:
 
     async def get_history(self, user_id: str) -> List[Dict[str, Any]]:
         """Get message history for a user."""
-        return await self.store.load_history(user_id)
+        history = await self.store.load_history(user_id)
+        import json
+        for msg in history:
+            try:
+                if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
+                    msg["content"] = json.loads(msg["content"])
+            except Exception:
+                pass
+        return history
 
     async def save_profile(self, user_id: str, profile: Dict[str, Any]) -> None:
         """Save user profile."""
@@ -157,14 +165,7 @@ class ChatManager:
         user_id: str,
         content: Any,
     ) -> str:
-        """Process a user message through the LangGraph graph.
-
-        History scoping:
-        - goalplanning: full user history
-        - all other intents: only messages since the 3 AM boundary (today)
-
-        The graph is invoked with the user's profile injected into state.
-        """
+        """Process a user message through the LangGraph graph."""
         now = datetime.now(timezone.utc).isoformat()
 
         # Build the user message
@@ -174,12 +175,8 @@ class ChatManager:
         else:
             # Multimodal content (text + images)
             new_msg = HumanMessage(content=content)
-            text_parts = [
-                p.get("text", "")
-                for p in content
-                if isinstance(p, dict) and p.get("type") == "text"
-            ]
-            save_content = " ".join(text_parts).strip() or "[Image]"
+            import json
+            save_content = json.dumps(content)
 
         # Save user message to DB
         await self.store.save_message(user_id, "user", save_content, now)
@@ -192,6 +189,15 @@ class ChatManager:
         # --- Phase 1: Quick intent detection with today's history ---
         day_boundary = _get_day_boundary()
         today_history = await getattr(self.store, "load_history_since", self.store.load_history)(user_id, day_boundary)
+
+        import json
+        for msg in today_history:
+            try:
+                if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
+                    msg["content"] = json.loads(msg["content"])
+            except Exception:
+                pass
+
         today_messages = self._build_langchain_messages(today_history)
 
         # --- Payload Construction for Microservice ---
@@ -257,6 +263,13 @@ class ChatManager:
             if detected_intent == "goalplanning":
                 logger.info(f"[{user_id}] Intent is goalplanning. Pushing Phase 2 job to queue with FULL history.")
                 full_history = await self.store.load_history(user_id)
+                import json
+                for msg in full_history:
+                    try:
+                        if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
+                            msg["content"] = json.loads(msg["content"])
+                    except Exception:
+                        pass
                 payload["invoke_full_history"] = True
                 payload["full_messages"] = full_history
                 payload["thread_id"] = f"{user_id}_full_{int(time.time() * 1000)}"

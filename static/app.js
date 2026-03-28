@@ -294,7 +294,8 @@ function sendMessage() {
             })
         );
         // Show in UI
-        const displayText = text ? `📷 ${text}` : '📷 [Image]';
+        const dataUrl = `data:${state.pendingImage.mimeType};base64,${state.pendingImage.base64}`;
+        const displayText = text ? `${text}\n\n![image](${dataUrl})` : `![image](${dataUrl})`;
         appendMessage('user', displayText, now);
         clearImagePreview();
     } else {
@@ -482,6 +483,9 @@ function renderMarkdown(text) {
     if (!text) return '';
 
     let html = escapeHtml(text);
+
+    // Images
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 300px; max-height: 300px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin-top: 8px;"/>');
 
     // Headers
     html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');

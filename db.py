@@ -118,7 +118,11 @@ class PostgresHistoryStore(HistoryStore):
     async def list_users(self) -> List[Dict[str, Any]]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            users = await conn.fetch("SELECT * FROM users ORDER BY last_active DESC")
+            users = await conn.fetch(
+                "SELECT * FROM users "
+                "WHERE user_id NOT LIKE 'loadtest_%' AND name != 'Test User' "
+                "ORDER BY last_active DESC"
+            )
             result = []
             for u in users:
                 u_dict = dict(u)

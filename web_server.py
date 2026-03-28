@@ -84,11 +84,27 @@ async def delete_user(user_id: str):
 async def get_history(user_id: str):
     """Get chat history for a user."""
     history = await chat_manager.get_history(user_id)
-    return [ChatMessage(
-        role=msg["role"],
-        content=msg["content"],
-        timestamp=msg["timestamp"],
-    ) for msg in history]
+    out = []
+    for msg in history:
+        content = msg["content"]
+        if isinstance(content, list):
+            text_parts = []
+            for p in content:
+                if p.get("type") == "text":
+                    text_parts.append(p["text"])
+                elif p.get("type") == "image_url":
+                    url = p["image_url"]["url"]
+                    text_parts.append(f"![image]({url})")
+            content_str = "\n\n".join(text_parts)
+        else:
+            content_str = str(content)
+            
+        out.append(ChatMessage(
+            role=msg["role"],
+            content=content_str,
+            timestamp=msg["timestamp"],
+        ))
+    return out
 
 
 @app.get("/api/users/{user_id}/profile")
