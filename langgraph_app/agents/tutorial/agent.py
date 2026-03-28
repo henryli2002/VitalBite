@@ -15,6 +15,9 @@ import asyncio
 logger = get_logger(__name__)
 
 
+from langgraph_app.utils.semaphores import with_semaphore
+
+@with_semaphore("tutorial")
 async def tutorial_node(state: GraphState) -> NodeOutput:
     """
     Generate a helpful response to user questions about the app.

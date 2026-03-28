@@ -13,7 +13,7 @@ from langgraph_app.utils.utils import (
     get_dominant_language,
 )
 from langgraph_app.tools.tools import search_restaurants_tool
-from langgraph_app.tools.map.ip_location import get_location_from_ip
+from langgraph_app.tools.map.ip_location import get_location_from_ip_async
 
 logger = get_logger(__name__)
 
@@ -71,6 +71,9 @@ class Recommendation(BaseModel):
     )
 
 
+from langgraph_app.utils.semaphores import with_semaphore
+
+@with_semaphore("recommendation")
 async def food_recommendation_node(state: GraphState) -> NodeOutput:
     """
     Provide restaurant and food recommendations based on user query.
@@ -139,9 +142,9 @@ You are WABI, an expert food recommendation assistant.
         final_lat = None
         final_lng = None
 
-        # Currently default to IP location.
+        # Currently default to IP location (async, non-blocking).
         # TODO: Update this to use explicit user location or frontend provided lat/lng
-        ip_loc = get_location_from_ip()
+        ip_loc = await get_location_from_ip_async()
         if ip_loc:
             final_lat, final_lng = ip_loc
 
@@ -149,11 +152,11 @@ You are WABI, an expert food recommendation assistant.
         raw_result = await search_restaurants_tool.ainvoke(
             {
                 "location": None,  # Force no text location bias for now, rely purely on coordinates/ip
-                "cuisine_type": query_params.cuisine_type,
+                "cuisine_type": query_params.cuisine_type, # Restore user preference handling
                 "radius_km": query_params.radius_km or 5.0,
                 "lat": final_lat,
                 "lng": final_lng,
-                "max_results": query_params.count or 5,
+                "max_results": max(15, query_params.count or 15), # Keep 15 to allow LLM ample choice
             }
         )
 

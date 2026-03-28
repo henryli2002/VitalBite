@@ -111,8 +111,8 @@ class ChatManager:
 
     def __init__(self, store: Optional[HistoryStore] = None):
         if store is None:
-            from db import SQLiteHistoryStore
-            store = SQLiteHistoryStore()
+            from db import PostgresHistoryStore
+            store = PostgresHistoryStore()
         self.store = store
 
     async def create_user(self, name: Optional[str] = None) -> Dict[str, Any]:
@@ -207,43 +207,87 @@ class ChatManager:
             "user_profile": user_profile if user_profile else None,
             "thread_id": invocation_id,
             "invoke_full_history": False,
-            "full_messages": None
+            "full_messages": None,
+            "response_channel": f"response_{invocation_id}"
         }
 
-        # Determine AI Engine URL
-        ai_url = os.getenv("WABI_AI_URL", "http://localhost:8001/invoke")
-
-        logger.info(f"[{user_id}] Sending graph request to AI Engine ({ai_url})")
-        
+        # Redis PubSub and Job Queue pattern
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(ai_url, json=payload)
-                response.raise_for_status()
-                response_data = response.json()
-                
-                ai_text = response_data.get("ai_text", "Sorry, I could not process your request.")
-                detected_intent = response_data.get("detected_intent", "chitchat")
-                
-                # If intent was goalplanning, the remote server handles the re-invocation logic IF we tell it to.
-                # However, the remote server needs the FULL history for that.
-                # We want to minimize payload size. So if the First pass returned 'goalplanning', 
-                # we can send a second request with full history if it's the first time we realize it.
-                # Wait, the remote server returns intent AFTER first pass. So we do the second pass here.
-                if detected_intent == "goalplanning":
-                    logger.info(f"[{user_id}] Intent is goalplanning. Re-requesting AI Engine with full history.")
-                    full_history = await self.store.load_history(user_id)
-                    payload["invoke_full_history"] = True
-                    payload["full_messages"] = full_history
-                    payload["thread_id"] = f"{user_id}_full_{int(time.time() * 1000)}"
+            import json
+            import asyncio
+            import redis.asyncio as redis
+            
+            wabi_redis_url = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
+            redis_client = redis.from_url(wabi_redis_url, decode_responses=True)
+            
+            response_channel = payload["response_channel"]
+            pubsub = redis_client.pubsub()
+            await pubsub.subscribe(response_channel)
+            
+            logger.info(f"[{user_id}] Pushing request to worker queue (wabi_ai_queue)...")
+            await redis_client.rpush("wabi_ai_queue", json.dumps(payload))
+            
+            ai_text = "Sorry, I could not process your request."
+            detected_intent = "chitchat"
+            
+            start_wait = time.time()
+            # Wait up to 120 seconds in queue
+            while time.time() - start_wait < 120.0:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message and message.get('type') == 'message':
+                    data = json.loads(message['data'])
                     
-                    response2 = await client.post(ai_url, json=payload)
-                    response2.raise_for_status()
-                    response_data = response2.json()
-                    ai_text = response_data.get("ai_text", ai_text)
+                    # Check if it was a backend Node Crash
+                    if isinstance(data, dict) and data.get("status") == "error":
+                        error_msg = data.get("message", "Unknown Backend Crash")
+                        logger.error(f"Intercepted backend crash for user {user_id}: {error_msg}")
+                        return f"🔴 致命后端错误: {error_msg}"
+                    
+                    # Parse the new nested JSON payload from langgraph_server.py
+                    messages = data.get("messages", [])
+                    if messages and isinstance(messages, list):
+                        ai_text = messages[-1].get("content", ai_text)
+                    else:
+                        ai_text = data.get('ai_text', ai_text)
+                        
+                    detected_intent = data.get("analysis", {}).get("intent", data.get("detected_intent", detected_intent))
+                    break
+            
+            # Goal planning secondary pipeline
+            if detected_intent == "goalplanning":
+                logger.info(f"[{user_id}] Intent is goalplanning. Pushing Phase 2 job to queue with FULL history.")
+                full_history = await self.store.load_history(user_id)
+                payload["invoke_full_history"] = True
+                payload["full_messages"] = full_history
+                payload["thread_id"] = f"{user_id}_full_{int(time.time() * 1000)}"
+                
+                await redis_client.rpush("wabi_ai_queue", json.dumps(payload))
+                
+                start_wait = time.time()
+                while time.time() - start_wait < 120.0:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message.get('type') == 'message':
+                        data = json.loads(message['data'])
+                        # Error check (same as Phase 1)
+                        if isinstance(data, dict) and data.get("status") == "error":
+                            error_msg = data.get("message", "Unknown Backend Crash")
+                            logger.error(f"Intercepted backend crash (Phase 2) for user {user_id}: {error_msg}")
+                            ai_text = f"🔴 致命后端错误 (Goalplanning): {error_msg}"
+                            break
+                        # Parse nested message format (same as Phase 1)
+                        p2_messages = data.get("messages", [])
+                        if p2_messages and isinstance(p2_messages, list):
+                            ai_text = p2_messages[-1].get("content", ai_text)
+                        else:
+                            ai_text = data.get('ai_text', ai_text)
+                        break
+            
+            await pubsub.unsubscribe(response_channel)
+            await redis_client.aclose()
 
         except Exception as e:
-            logger.error(f"[{user_id}] Failed to contact AI Engine: {e}", exc_info=True)
-            ai_text = f"Warning: Backend AI Service unavailable. ({str(e)})"
+            logger.error(f"[{user_id}] Failed to dispatch AI message to Queue: {e}", exc_info=True)
+            ai_text = f"Warning: Backend AI Task Queue unavailable. ({str(e)})"
 
         # Save AI response to DB
         ai_timestamp = datetime.now(timezone.utc).isoformat()

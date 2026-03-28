@@ -53,6 +53,9 @@ class PortionAnalysis(BaseModel):
     )
 
 
+from langgraph_app.utils.semaphores import with_semaphore
+
+@with_semaphore("recognition")
 async def recognition_node(state: GraphState) -> NodeOutput:
     """
     A unified node that performs food recognition with structured RAG workflow.

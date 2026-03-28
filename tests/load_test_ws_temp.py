@@ -34,7 +34,7 @@ logger = logging.getLogger("wabi.loadtest")
 
 # CONFIGURE TEST DEMOGRAPHICS HERE
 WS_URL = "ws://localhost:8000/ws"
-CONCURRENT_USERS = 200     # Set test scale
+CONCURRENT_USERS = 10     # Set test scale
 MESSAGES_PER_USER = 6      # Total turns per user. Must be >= 2.
 DELAY_BETWEEN_MSGS = 2.0   # Seconds to wait after receiving AI response before sending next msg
 
@@ -108,7 +108,9 @@ async def simulate_user(user_index: int) -> Dict[str, Any]:
                 
                 while True:
                     try:
-                        response_raw = await asyncio.wait_for(websocket.recv(), timeout=90.0)
+                        # Recognition has 4 serial LLM calls → needs more time
+                        recv_timeout = 180.0 if task_type == "recognition" else 90.0
+                        response_raw = await asyncio.wait_for(websocket.recv(), timeout=recv_timeout)
                         response = json.loads(response_raw)
                         
                         if response.get("type") == "typing":

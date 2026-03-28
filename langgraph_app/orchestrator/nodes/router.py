@@ -29,6 +29,9 @@ class IntentAnalysis(BaseModel):
     reasoning: str
 
 
+from langgraph_app.utils.semaphores import with_semaphore
+
+@with_semaphore("intent")
 async def intent_router_node(state: GraphState) -> NodeOutput:
     """
     Route user input to appropriate agent based on intent.

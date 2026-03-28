@@ -1,15 +1,19 @@
-"""Google Maps API Tools for location and place searching."""
+"""Google Maps API Tools for location and place searching with REDIS CACHING."""
 
 from typing import Dict, Any, List, Optional, Tuple
 import os
-import requests
+import json
+import hashlib
+import httpx
+import redis.asyncio as redis
 from langgraph_app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+REDIS_URL = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
 
 class GoogleMapsTool:
-    """Wrapper for Google Maps API, specifically focusing on Places for food recommendation."""
+    """Wrapper for Google Maps API with 24-hour Redis caching for identical queries."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.environ.get("GOOGLE_MAPS_API_KEY")
@@ -18,11 +22,19 @@ class GoogleMapsTool:
                 "GOOGLE_MAPS_API_KEY is not set. Google Maps tools will fail."
             )
 
-        # Using Google Places API (New) endpoints
         self.text_search_url = "https://places.googleapis.com/v1/places:searchText"
-        self.nearby_search_url = "https://places.googleapis.com/v1/places:searchNearby"
+        self.redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        # Persistent HTTP client — reuses TCP connections across requests
+        self._http_client = httpx.AsyncClient(timeout=10.0)
+        self.CACHE_TTL_SECONDS = 86400  # 24 hours for successful results
+        self.CACHE_TTL_EMPTY = 3600     # 1 hour for empty results
 
-    def search_restaurants(
+    def _generate_cache_key(self, payload: Dict[str, Any]) -> str:
+        """Generates an MD5 hash cache key based on the API request payload."""
+        payload_str = json.dumps(payload, sort_keys=True)
+        return "maps_cache_" + hashlib.md5(payload_str.encode('utf-8')).hexdigest()
+
+    async def search_restaurants(
         self,
         location: Optional[str] = None,
         cuisine_type: Optional[str] = None,
@@ -31,22 +43,35 @@ class GoogleMapsTool:
         max_results: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Search for restaurants based on location/coordinates and cuisine.
+        Search for restaurants based on location/coordinates and cuisine asynchronously.
+        Implements Redis caching to avoid massive Google Maps billing during scale.
         """
         if not self.api_key:
             return []
 
-        # Construct the text query
         query_parts = []
         if cuisine_type:
-            query_parts.append(cuisine_type)
+            # 严格映射到全英文以方便 Google Maps 识别，并保障缓存 100% 聚合
+            c_norm = cuisine_type.lower().strip()
+            synonyms = {
+                "咖啡": "cafe", "咖啡店": "cafe", "咖啡馆": "cafe", "coffee": "cafe", "coffee shop": "cafe", "cafe": "cafe",
+                "汉堡": "hamburger restaurant", "汉堡店": "hamburger restaurant", "burger": "hamburger restaurant", "burgers": "hamburger restaurant",
+                "火锅": "hotpot restaurant", "火锅店": "hotpot restaurant", "hot pot": "hotpot restaurant", "hotpot": "hotpot restaurant",
+                "寿司": "sushi restaurant", "寿司店": "sushi restaurant", "sushi": "sushi restaurant",
+                "面条": "noodle restaurant", "面馆": "noodle restaurant", "拉面": "noodle restaurant", "noodle": "noodle restaurant", "noodles": "noodle restaurant",
+                "牛肉面": "beef noodle restaurant", "披萨": "pizza restaurant", "披萨店": "pizza restaurant", "pizza": "pizza restaurant",
+                "中餐": "chinese restaurant", "中餐厅": "chinese restaurant", "chinese": "chinese restaurant", "chinese food": "chinese restaurant",
+                "日料": "japanese restaurant", "日本料理": "japanese restaurant", "japanese": "japanese restaurant", "japanese food": "japanese restaurant",
+                "韩餐": "korean restaurant", "韩国料理": "korean restaurant", "korean": "korean restaurant", "korean food": "korean restaurant",
+                "素食": "vegetarian restaurant", "vegetarian": "vegetarian restaurant", "vegan": "vegan restaurant"
+            }
+            c_norm = synonyms.get(c_norm, c_norm)
+            query_parts.append(c_norm)
+            
         if location:
             query_parts.append(location)
 
-        # Default fallback
-        if not query_parts and not lat_lng:
-            query_parts = ["restaurant"]
-        elif not query_parts and lat_lng:
+        if not query_parts:
             query_parts = ["restaurant"]
 
         headers = {
@@ -55,15 +80,13 @@ class GoogleMapsTool:
             "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.priceLevel,places.id,places.types",
         }
 
-        # If we have lat/lng, we can use Nearby Search (or Text Search with location bias)
-        # For simplicity and power, Text Search (New) with location bias is very effective
         payload: Dict[str, Any] = {
-            "textQuery": " ".join(query_parts) if query_parts else "restaurant",
+            "textQuery": " ".join(query_parts),
             "maxResultCount": max_results,
         }
 
         if lat_lng:
-            radius_meters = int(radius_km * 1000) if radius_km else 5000  # default 5km
+            radius_meters = int(radius_km * 1000) if radius_km else 5000
             payload["locationBias"] = {
                 "circle": {
                     "center": {"latitude": lat_lng[0], "longitude": lat_lng[1]},
@@ -71,8 +94,22 @@ class GoogleMapsTool:
                 }
             }
 
+        # 1. Check Redis Cache
+        cache_key = self._generate_cache_key(payload)
         try:
-            response = requests.post(
+            cached_data = await self.redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"Redis Cache HIT for key: {cache_key}")
+                await self.redis_client.incr("wabi_metrics:cache_hit")
+                return json.loads(cached_data)
+        except Exception as e:
+            logger.warning(f"Redis Cache GET failed: {e}")
+
+        # 2. Cache MISS -> Call Google
+        logger.info(f"Redis Cache MISS: Fetching live data from Google Maps for {payload['textQuery']}...")
+        try:
+            await self.redis_client.incr("wabi_metrics:cache_miss")
+            response = await self._http_client.post(
                 self.text_search_url, json=payload, headers=headers
             )
             response.raise_for_status()
@@ -80,7 +117,6 @@ class GoogleMapsTool:
 
             places = data.get("places", [])
             formatted_results = []
-
             for place in places:
                 formatted_results.append(
                     {
@@ -93,12 +129,25 @@ class GoogleMapsTool:
                     }
                 )
 
+            # 3. Store the successful response in Redis Cache
+            cache_ttl = self.CACHE_TTL_SECONDS if formatted_results else self.CACHE_TTL_EMPTY
+            try:
+                await self.redis_client.setex(
+                    name=cache_key,
+                    time=cache_ttl,
+                    value=json.dumps(formatted_results, ensure_ascii=False)
+                )
+            except Exception as e:
+                logger.warning(f"Redis Cache SET failed: {e}")
+
             return formatted_results
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPStatusError as e:
             logger.error(f"Error calling Google Maps API: {e}")
-            if hasattr(e, "response") and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+            logger.error(f"Response: {e.response.text}")
+            return []
+        except Exception as e:
+            logger.error(f"Unknown error during Google Maps search: {e}")
             return []
 
 

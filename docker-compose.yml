@@ -7,12 +7,17 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
-      - ./.env:/app/.env
+      - .:/app
     environment:
       - WABI_AI_URL=http://wabi-ai:8001/invoke
+      - WABI_REDIS_URL=redis://wabi-redis:6379/0
+      - WABI_DB_URL=postgresql://wabi_user:wabi_password@wabi-postgres:5432/wabi_chat
     depends_on:
       wabi-ai:
+        condition: service_started
+      wabi-postgres:
+        condition: service_healthy
+      wabi-redis:
         condition: service_started
     restart: unless-stopped
     networks:
@@ -26,7 +31,43 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./.env:/app/.env
+      - .:/app
+    environment:
+      - WABI_REDIS_URL=redis://wabi-redis:6379/0
+    depends_on:
+      wabi-redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - wabi-network
+
+  wabi-postgres:
+    image: postgres:15-alpine
+    container_name: wabi-postgres
+    environment:
+      POSTGRES_USER: wabi_user
+      POSTGRES_PASSWORD: wabi_password
+      POSTGRES_DB: wabi_chat
+    ports:
+      - "5432:5432"
+    volumes:
+      - wabi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wabi_user -d wabi_chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - wabi-network
+
+  wabi-redis:
+    image: redis:7-alpine
+    container_name: wabi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - wabi_redisdata:/data
     restart: unless-stopped
     networks:
       - wabi-network
@@ -37,3 +78,5 @@ networks:
 
 volumes:
   wabi_data:
+  wabi_pgdata:
+  wabi_redisdata:

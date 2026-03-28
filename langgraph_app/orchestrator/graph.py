@@ -2,7 +2,8 @@
 
 from typing import Literal
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+# MemorySaver removed: each invocation uses a unique thread_id so checkpoints
+# are never reused and only leak memory under high concurrency.
 from langgraph_app.orchestrator.state import GraphState
 from langgraph_app.orchestrator.nodes.guardrails import (
     input_guardrail_node,
@@ -95,8 +96,7 @@ def create_graph():  # type: ignore
         {"unsafe": END, "safe": END},
     )
 
-    memory = MemorySaver()
-    return workflow.compile(checkpointer=memory)
+    return workflow.compile()
 
 
 # Create the graph instance

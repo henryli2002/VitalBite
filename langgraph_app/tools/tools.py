@@ -33,7 +33,7 @@ def get_user_location_by_ip_tool() -> str:
 
 
 @tool("search_restaurants", args_schema=SearchRestaurantsInput)
-def search_restaurants_tool(
+async def search_restaurants_tool(
     location: Optional[str] = None,
     cuisine_type: Optional[str] = None,
     radius_km: Optional[float] = 5.0,
@@ -50,7 +50,7 @@ def search_restaurants_tool(
     if lat is not None and lng is not None:
         lat_lng = (lat, lng)
 
-    results = map_tool.search_restaurants(
+    results = await map_tool.search_restaurants(
         location=location,
         cuisine_type=cuisine_type,
         radius_km=radius_km,

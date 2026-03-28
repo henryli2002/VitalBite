@@ -52,10 +52,11 @@ class FnddsSearchInput(BaseModel):
 
 # --- The Tool Definition ---
 @tool("fndds_nutrition_search", args_schema=FnddsSearchInput)
-def fndds_nutrition_search_tool(food_description: str, top_k: int = 3) -> str:
+async def fndds_nutrition_search_tool(food_description: str, top_k: int = 3) -> str:
     """
     Searches the FNDDS vector database for the most relevant nutritional
     information based on a food description.
+    Runs CPU-bound FAISS search in a thread pool to avoid blocking the event loop.
     """
     if not all([model, index, metadata_list]):
         error_message = (
@@ -64,22 +65,19 @@ def fndds_nutrition_search_tool(food_description: str, top_k: int = 3) -> str:
         print(error_message)
         return json.dumps({"error": error_message})
 
-    try:
-        print(f"Performing RAG search for: '{food_description}', k={top_k}")
+    import asyncio
 
-        # 1. Encode the user's query
+    def _sync_search():
+        """CPU-bound portion: numpy encode + FAISS index search."""
         query_embedding = model.encode([food_description])
         query_embedding = np.array(query_embedding).astype("float32")
-
-        # 2. Search the FAISS index
         distances, indices = index.search(query_embedding, top_k)
+        return [metadata_list[i] for i in indices[0]]
 
-        # 3. Retrieve the corresponding metadata
-        results = [metadata_list[i] for i in indices[0]]
-
+    try:
+        print(f"Performing RAG search for: '{food_description}', k={top_k}")
+        results = await asyncio.to_thread(_sync_search)
         print(f"Found {len(results)} results.")
-
-        # 4. Return the results as JSON string
         return json.dumps(results, ensure_ascii=False)
 
     except Exception as e:
