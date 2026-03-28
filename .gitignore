@@ -61,3 +61,13 @@ Thumbs.db
 
 *.txt
 *.xlsx
+
+# 数据库 绝对禁止上传
+*.db
+*.sqlite
+*.sqlite3
+
+# 日志
+*.log
+logs/
+log/
