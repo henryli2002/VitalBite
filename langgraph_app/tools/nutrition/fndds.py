@@ -40,6 +40,13 @@ except Exception as e:
     metadata_list = None
 
 
+from langgraph_app.utils.semaphores import get_semaphore
+from concurrent.futures import ThreadPoolExecutor
+
+# Dedicated Thread Pool for CPU-bound FAISS retrieval
+# Keeps the main event loop free from blocking operations
+FNDDS_THREAD_POOL = ThreadPoolExecutor(max_workers=8)
+
 # --- Pydantic Schema for Tool Input ---
 class FnddsSearchInput(BaseModel):
     """Input for searching the FNDDS database."""
@@ -56,7 +63,7 @@ async def fndds_nutrition_search_tool(food_description: str, top_k: int = 3) -> 
     """
     Searches the FNDDS vector database for the most relevant nutritional
     information based on a food description.
-    Runs CPU-bound FAISS search in a thread pool to avoid blocking the event loop.
+    Runs CPU-bound FAISS search in a dedicated thread pool with semantic backpressure.
     """
     if not all([model, index, metadata_list]):
         error_message = (
@@ -74,11 +81,16 @@ async def fndds_nutrition_search_tool(food_description: str, top_k: int = 3) -> 
         distances, indices = index.search(query_embedding, top_k)
         return [metadata_list[i] for i in indices[0]]
 
+    # Apply backpressure to prevent CPU thrashing
+    sem = get_semaphore("fndds")
+    
     try:
-        print(f"Performing RAG search for: '{food_description}', k={top_k}")
-        results = await asyncio.to_thread(_sync_search)
-        print(f"Found {len(results)} results.")
-        return json.dumps(results, ensure_ascii=False)
+        async with sem:
+            print(f"Performing RAG search for: '{food_description}', k={top_k}")
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(FNDDS_THREAD_POOL, _sync_search)
+            print(f"Found {len(results)} results.")
+            return json.dumps(results, ensure_ascii=False)
 
     except Exception as e:
         error_message = f"An error occurred during the FNDDS RAG search: {e}"

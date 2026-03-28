@@ -82,4 +82,3 @@ docker-compose down
 8. 🚪 **进入系统内部（高级）**：`docker exec -it wabi-ai /bin/bash`
    *(类似于 SSH 登录到 AI 大脑所在的那个“独立电脑”里看环境文件)*
 
-docker system prune -a

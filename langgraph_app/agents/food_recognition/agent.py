@@ -157,8 +157,7 @@ Analyze the user-provided image and identify all food items.
     # --- Step 2: RAG retrieves nutritional info ---
     step_start = time.time()
     logger.info("Step 2: Retrieving nutritional info from FNDDS...")
-    rag_results = []
-    for food_item in identified_foods:
+    async def fetch_food_data(food_item):
         try:
             tool_result_json = await fndds_nutrition_search_tool.ainvoke(
                 {"food_description": food_item.food_name.lower(), "top_k": 3}
@@ -175,22 +174,21 @@ Analyze the user-provided image and identify all food items.
                     )
                     break
 
-            rag_results.append(
-                {
-                    "food_name": food_item.food_name,
-                    "standard_portion_weight_g": standard_portion_weight,
-                    "standard_portion_description": standard_portion_desc,
-                    "potential_matches": tool_result,
-                }
-            )
+            return {
+                "food_name": food_item.food_name,
+                "standard_portion_weight_g": standard_portion_weight,
+                "standard_portion_description": standard_portion_desc,
+                "potential_matches": tool_result,
+            }
         except Exception as e:
             logger.error(f"Step 2 FNDDS error for '{food_item.food_name}': {e}")
-            rag_results.append(
-                {
-                    "food_name": food_item.food_name,
-                    "error": str(e),
-                }
-            )
+            return {
+                "food_name": food_item.food_name,
+                "error": str(e),
+            }
+
+    # Execute FNDDS queries concurrently, backed by thread pool and semaphore
+    rag_results = await asyncio.gather(*(fetch_food_data(fi) for fi in identified_foods))
 
     step_time = time.time() - step_start
     step_metrics.append(

@@ -2,13 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install required packages
+# 1. Cache dependencies (Copy ONLY pyproject.toml)
 COPY pyproject.toml .
-# Copy AI application files to satisfy pyproject.toml requirements
-COPY langgraph_app/ /app/langgraph_app/
-# Use PyTorch CPU-only wheel index to prevent downloading massive CUDA libraries on macOS
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu . "fastapi[all]"
+# Create a dummy folder so pip install doesn't fail trying to build the package
+RUN mkdir -p /app/langgraph_app && touch /app/langgraph_app/__init__.py && \
+    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu . "fastapi[all]"
 
+# 2. Copy the actual application code (Code changes will only invalidate from here down)
+COPY langgraph_app/ /app/langgraph_app/
 COPY models.py langgraph_server.py /app/
 
 EXPOSE 8001
