@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install required packages
+COPY pyproject.toml .
+# Copy AI application files to satisfy pyproject.toml requirements
+COPY langgraph_app/ /app/langgraph_app/
+# Use PyTorch CPU-only wheel index to prevent downloading massive CUDA libraries on macOS
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu . "fastapi[all]"
+
+COPY models.py langgraph_server.py /app/
+
+EXPOSE 8001
+CMD ["uvicorn", "langgraph_server:app", "--host", "0.0.0.0", "--port", "8001"]

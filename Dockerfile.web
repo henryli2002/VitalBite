@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install required packages
+COPY pyproject.toml .
+# Copy langgraph_app first to satisfy pyproject.toml package requirements
+COPY langgraph_app/ /app/langgraph_app/
+# Use PyTorch CPU-only wheel index to prevent downloading massive CUDA libraries on macOS
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu . httpx aiosqlite pydantic "fastapi[all]"
+
+# Copy application files
+COPY static/ /app/static/
+COPY models.py chat_manager.py db.py web_server.py /app/
+
+# In production, data should be mounted as a volume
+RUN mkdir -p /app/data
+
+EXPOSE 8000
+CMD ["uvicorn", "web_server:app", "--host", "0.0.0.0", "--port", "8000"]

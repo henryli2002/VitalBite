@@ -10,7 +10,10 @@ import uuid
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
+import os
 from typing import Dict, List, Optional, Any
+
+import httpx
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
 
@@ -153,7 +156,6 @@ class ChatManager:
         self,
         user_id: str,
         content: Any,
-        graph: Any,
     ) -> str:
         """Process a user message through the LangGraph graph.
 
@@ -192,57 +194,56 @@ class ChatManager:
         today_history = await getattr(self.store, "load_history_since", self.store.load_history)(user_id, day_boundary)
         today_messages = self._build_langchain_messages(today_history)
 
-        # Build the state for FIRST invocation (router uses today's context)
+        # --- Payload Construction for Microservice ---
         session_id = f"web_{user_id}_{int(time.time())}"
-        initial_state = {
-            "messages": today_messages,
+        invocation_id = f"{user_id}_{int(time.time() * 1000)}"
+
+        # Prepare base payload with simple serializable dicts instead of LangChain objects
+        payload = {
+            "messages": today_history,
             "session_id": session_id,
             "user_id": user_id,
             "user_name": user_name,
             "user_profile": user_profile if user_profile else None,
+            "thread_id": invocation_id,
+            "invoke_full_history": False,
+            "full_messages": None
         }
-        logger.info(f"[{user_id}] Graph state built — user_name={user_name}, user_profile keys={list(user_profile.keys()) if user_profile else 'None'}")
 
-        # We use a unique thread_id per invocation to avoid MemorySaver accumulation
-        # since we now manage history ourselves via SQLite.
-        invocation_id = f"{user_id}_{int(time.time() * 1000)}"
-        config = {"configurable": {"thread_id": invocation_id}}
+        # Determine AI Engine URL
+        ai_url = os.getenv("WABI_AI_URL", "http://localhost:8001/invoke")
 
-        # Invoke the graph
-        result = await graph.ainvoke(initial_state, config=config)
+        logger.info(f"[{user_id}] Sending graph request to AI Engine ({ai_url})")
+        
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(ai_url, json=payload)
+                response.raise_for_status()
+                response_data = response.json()
+                
+                ai_text = response_data.get("ai_text", "Sorry, I could not process your request.")
+                detected_intent = response_data.get("detected_intent", "chitchat")
+                
+                # If intent was goalplanning, the remote server handles the re-invocation logic IF we tell it to.
+                # However, the remote server needs the FULL history for that.
+                # We want to minimize payload size. So if the First pass returned 'goalplanning', 
+                # we can send a second request with full history if it's the first time we realize it.
+                # Wait, the remote server returns intent AFTER first pass. So we do the second pass here.
+                if detected_intent == "goalplanning":
+                    logger.info(f"[{user_id}] Intent is goalplanning. Re-requesting AI Engine with full history.")
+                    full_history = await self.store.load_history(user_id)
+                    payload["invoke_full_history"] = True
+                    payload["full_messages"] = full_history
+                    payload["thread_id"] = f"{user_id}_full_{int(time.time() * 1000)}"
+                    
+                    response2 = await client.post(ai_url, json=payload)
+                    response2.raise_for_status()
+                    response_data = response2.json()
+                    ai_text = response_data.get("ai_text", ai_text)
 
-        # Check if the intent was goalplanning — if so, re-invoke with FULL history
-        analysis = result.get("analysis", {})
-        detected_intent = analysis.get("intent", "chitchat")
-
-        if detected_intent == "goalplanning":
-            # Re-invoke with full history for comprehensive planning
-            full_history = await self.store.load_history(user_id)
-            full_messages = self._build_langchain_messages(full_history)
-
-            full_state = {
-                "messages": full_messages,
-                "session_id": session_id,
-                "user_id": user_id,
-                "user_name": user_name,
-                "user_profile": user_profile if user_profile else None,
-            }
-            # Fresh invocation ID for the full-history run
-            full_invocation_id = f"{user_id}_full_{int(time.time() * 1000)}"
-            full_config = {"configurable": {"thread_id": full_invocation_id}}
-
-            result = await graph.ainvoke(full_state, config=full_config)
-
-        # Extract AI response
-        ai_text = ""
-        if "messages" in result and result["messages"]:
-            last_msg = result["messages"][-1]
-            if isinstance(last_msg, AIMessage):
-                ai_text = last_msg.content
-            else:
-                ai_text = str(last_msg.content)
-        else:
-            ai_text = "Sorry, I could not process your request."
+        except Exception as e:
+            logger.error(f"[{user_id}] Failed to contact AI Engine: {e}", exc_info=True)
+            ai_text = f"Warning: Backend AI Service unavailable. ({str(e)})"
 
         # Save AI response to DB
         ai_timestamp = datetime.now(timezone.utc).isoformat()

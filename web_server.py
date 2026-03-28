@@ -17,17 +17,7 @@ from fastapi.responses import FileResponse
 from models import UserCreate, UserInfo, UserProfile, ChatMessage, WSIncoming, WSOutgoing
 from chat_manager import ChatManager
 
-# Lazy import the graph to avoid import-time side effects
-_graph = None
 
-
-def get_graph():
-    """Lazy-load the LangGraph graph."""
-    global _graph
-    if _graph is None:
-        from langgraph_app.orchestrator.graph import graph
-        _graph = graph
-    return _graph
 
 
 # ---------------------------------------------------------------------------
@@ -158,9 +148,8 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                 else:
                     content = incoming.content
 
-                # Process through LangGraph natively (all nodes async/threaded inside)
-                graph = get_graph()
-                ai_response = await chat_manager.process_message(user_id, content, graph)
+                # Process through chat manager which invokes AI microservice
+                ai_response = await chat_manager.process_message(user_id, content)
 
                 # Send AI response
                 response = WSOutgoing(

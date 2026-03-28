@@ -1,9 +1,39 @@
 services:
-  qdrant:
-    image: qdrant/qdrant
+  wabi-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: wabi-web
     ports:
-      - "6333:6333"
+      - "8000:8000"
     volumes:
-      - qdrant_storage:/qdrant/storage
+      - ./data:/app/data
+      - ./.env:/app/.env
+    environment:
+      - WABI_AI_URL=http://wabi-ai:8001/invoke
+    depends_on:
+      wabi-ai:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - wabi-network
+
+  wabi-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    container_name: wabi-ai
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./.env:/app/.env
+    restart: unless-stopped
+    networks:
+      - wabi-network
+
+networks:
+  wabi-network:
+    driver: bridge
+
 volumes:
-  qdrant_storage:
+  wabi_data:
