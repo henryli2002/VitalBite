@@ -310,9 +310,10 @@ Summarize the user's meal and provide a nutritional assessment.
 1. ACKNOWLEDGE: MUST state food items identified and calculated weights first.
 2. TRANSLATE: Translate English food names into the user's language ('{lang}').
 3. COMPUTE: Use 'calculated_weight_g' exactly. Multiply per-100g nutritional values by (calculated_weight_g / 100). Sum total nutrition for the entire meal.
-4. PERSONALIZATION: CRITICAL - Explicitly evaluate the meal against the 'User Profile'. Call out if it violates allergies or helps their goals.
-5. LANGUAGE: The response MUST be in '{lang}'.
-6. TONE: Present as YOUR OWN expert analysis. Be concise and conversational.""")]
+4. INGREDIENTS: If 'ingredients' data is available, briefly list or analyze the key ingredients for the food items.
+5. PERSONALIZATION: CRITICAL - Explicitly evaluate the meal against the 'User Profile'. Call out if it violates allergies or helps their goals.
+6. LANGUAGE: The response MUST be in '{lang}'.
+7. TONE: Present as YOUR OWN expert analysis. Be concise and conversational.""")]
             + messages
             + [HumanMessage(content=summary_prompt)]
         )

@@ -60,8 +60,10 @@ docker-compose down
 ### 🌟 新手必看：关闭会删掉我的聊天记录吗？
 **绝对不会！**
 我们在 `docker-compose.yml` 中配置了 **数据卷挂载（Volumes）**：
-- `sqlite` 数据库依旧保存在你电脑本机的 `./data` 文件夹里。
-- 所以即使你执行了 `down` 销毁了盒子，明天执行 `up` 创建新的盒子时，你的账号、Profile 和历史聊天会自动恢复！
+- PostgreSQL 数据库的数据保存在独立的 Docker Volume `wabi_pgdata` 中。
+- 所以即使你执行了 `docker-compose down` 销毁了所有的容器，只要你不加上 `-v` 参数，数据库数据和你的账号、Profile 以及历史聊天记录就会自动永久保留！下次启动 `up` 时会自动恢复！
+
+**⚠️ 危险警告**：如果你运行了 `docker-compose down -v`，Docker 将会连同挂载的数据卷一并**彻底删除**！这会导致你的 PostgreSQL 数据库被清空，所有历史数据灰飞烟灭！请永远不要在生产环境中随便加 `-v`。
 
 ---
 
@@ -71,8 +73,8 @@ docker-compose down
 2. 🚀 **平时日常打开**：`docker-compose up -d`
 3. 🕵️ **看后台报错**：`docker-compose logs -f`
 4. 🛑 **关掉不玩了**：`docker-compose down`
-5. 🧹 **重新下载所有依赖（暴力清缓存）**：`docker-compose build --no-cache`
-   *(当你遇到奇怪的依赖报错，或者想彻底从零重新安装所有 Python 库时使用。)*
+5. 🧹 **重新打包（清缓存，不会删数据）**：`docker-compose build --no-cache`
+   *(当你遇到奇怪的依赖报错，想彻底从零重新安装所有 Python 库时使用。**请放心，这只会重新构建镜像代码，绝对不会删除你的 PostgreSQL 数据库记录！**)*
    
    如果想连着以前积攒的无用镜像彻底清理释放硬盘空间，可以运行：`docker system prune -a`
 6. 📊 **查看服务运行状态**：`docker-compose ps` (简略版) 或 `docker ps` (详细版)

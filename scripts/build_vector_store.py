@@ -15,7 +15,7 @@ def parse_nutrient_column(column_name):
     return column_name, "N/A"
 
 
-def create_food_data(row, nutrients_df, nutrient_columns, portions_df):
+def create_food_data(row, nutrients_df, nutrient_columns, portions_df, ingredients_df=None):
     """
     Creates both embedding text and metadata for a single food item.
     - embedding_text: used for semantic search (food name + portion description)
@@ -37,6 +37,13 @@ def create_food_data(row, nutrients_df, nutrient_columns, portions_df):
             portion_weight = float(portion_weight_val)
             portion_desc = f"{portion_desc} ({portion_weight}g)"
 
+    # Get ingredients info
+    ingredients = []
+    if ingredients_df is not None:
+        ingredient_rows = ingredients_df[ingredients_df["Food code"] == food_code]
+        if not ingredient_rows.empty:
+            ingredients = ingredient_rows["Ingredient description"].dropna().tolist()
+
     # embedding_text: only food name + portion description (for semantic search)
     embedding_text = food_name
     if portion_desc:
@@ -46,6 +53,9 @@ def create_food_data(row, nutrients_df, nutrient_columns, portions_df):
     full_text = f"Food: {food_name}\nFood Code: {food_code}\n"
     if portion_desc:
         full_text += f"Standard Portion: {portion_desc}\n"
+    
+    if ingredients:
+        full_text += f"Ingredients: {', '.join(ingredients)}\n"
 
     # Get nutrient data
     nutrient_data_row = nutrients_df[nutrients_df["Food code"] == row["Food code"]]
@@ -69,6 +79,7 @@ def create_food_data(row, nutrients_df, nutrient_columns, portions_df):
         "food_code": int(food_code),
         "standard_portion_weight_g": portion_weight,
         "standard_portion_description": portion_desc,
+        "ingredients": ingredients,
         "nutrients_per_100g": nutrients,
         "full_text": full_text,
     }
@@ -102,12 +113,16 @@ def build_fndds_vector_store():
             os.path.join(base_path, "Portions and Weights.xlsx"),
             header=1,
         )
+        ingredients_df = pd.read_excel(
+            os.path.join(base_path, "FNDDS Ingredients.xlsx"),
+            header=1,
+        )
     except FileNotFoundError as e:
         print(f"Error: Could not find XLSX files. Details: {e}")
         return
 
     print(
-        f"Loaded {len(foods_df)} foods, {len(nutrients_df)} nutrient rows, {len(portions_df)} portion rows"
+        f"Loaded {len(foods_df)} foods, {len(nutrients_df)} nutrient rows, {len(portions_df)} portion rows, {len(ingredients_df)} ingredient rows"
     )
     print("Processing data and creating documents...")
 
@@ -118,7 +133,7 @@ def build_fndds_vector_store():
     metadata_list = []
     for _, row in foods_df.iterrows():
         embedding_text, metadata = create_food_data(
-            row, nutrients_df, nutrient_columns, portions_df
+            row, nutrients_df, nutrient_columns, portions_df, ingredients_df
         )
         embedding_texts.append(embedding_text)
         metadata_list.append(metadata)
