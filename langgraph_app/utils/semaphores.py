@@ -19,11 +19,11 @@ from typing import Callable, Any, Dict
 _SEMAPHORE_LIMITS: Dict[str, int] = {
     "intent":          200,   # Lightweight text classification
     "chitchat":        200,   # Flash-lite text, ~1s/req
-    "recommendation":   200,   # LLM + Google Maps API + LLM, moderate
-    "recognition":      200,   # HEAVY: Vision + FAISS. Each req carries ~2-4MB base64 image.
-    "tutorial":         200,   # Medium-weight text LLM
-    "goalplanning":     200,   # Needs full history pull, high memory per req
-    "fndds":            36,   # Thread pool backpressure for FAISS CPU retrieval
+    "recommendation":   100,   # LLM + Google Maps API + LLM, moderate
+    "recognition":      50,    # HEAVY: Vision + FAISS. Lowered to 50 for 3GB RAM safety (~2-4MB base64 per req)
+    "tutorial":         100,   # Medium-weight text LLM
+    "goalplanning":     100,   # Needs full history pull, high memory per req
+    "fndds":            16,    # Thread pool backpressure for FAISS CPU retrieval (4 cores -> 4 workers + 12 queue slots)
 }
 
 # Runtime cache: created per event-loop at first access

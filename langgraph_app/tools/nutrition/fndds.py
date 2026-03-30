@@ -44,8 +44,8 @@ from langgraph_app.utils.semaphores import get_semaphore
 from concurrent.futures import ThreadPoolExecutor
 
 # Dedicated Thread Pool for CPU-bound FAISS retrieval
-# Keeps the main event loop free from blocking operations
-FNDDS_THREAD_POOL = ThreadPoolExecutor(max_workers=8)
+# Set to 4 workers to match the 4-core CPU limit, avoiding context switching overhead
+FNDDS_THREAD_POOL = ThreadPoolExecutor(max_workers=4)
 
 # --- Pydantic Schema for Tool Input ---
 class FnddsSearchInput(BaseModel):

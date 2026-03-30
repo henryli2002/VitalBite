@@ -34,9 +34,9 @@ logger = logging.getLogger("wabi.loadtest")
 
 # CONFIGURE TEST DEMOGRAPHICS HERE
 WS_URL = "ws://localhost:8000/ws"
-CONCURRENT_USERS = 200     # Set test scale
-MESSAGES_PER_USER = 6      # Total turns per user. Must be >= 2.
-DELAY_BETWEEN_MSGS = 2.0   # Seconds to wait after receiving AI response before sending next msg
+CONCURRENT_USERS = 100    # Set test scale
+MESSAGES_PER_USER = 4     # Total turns per user. Must be >= 2.
+DELAY_BETWEEN_MSGS = 3.0   # Seconds to wait after receiving AI response before sending next msg
 
 # Pre-load image for recognition
 IMAGE_PATH = "burger.jpg"
@@ -58,10 +58,8 @@ async def simulate_user(user_index: int) -> Dict[str, Any]:
         "is_failed_user": False,
         "messages_sent": 0,
         "messages_failed": 0,
-        "times_first_half": [],
-        "times_second_half": [],
-        "times_recommendation": [],
-        "times_recognition": []
+        "times_per_turn": {i: [] for i in range(MESSAGES_PER_USER)},
+        "errors_per_turn": {i: 0 for i in range(MESSAGES_PER_USER)}
     }
     
     regular_msgs = max(0, MESSAGES_PER_USER - 2)
@@ -118,29 +116,24 @@ async def simulate_user(user_index: int) -> Dict[str, Any]:
                             response_time = time.time() - msg_start_time
                             
                             # Distribute latency metric to the correct bucket
-                            if task_type == "chitchat":
-                                if msg_idx < first_half_limit:
-                                    stats["times_first_half"].append(response_time)
-                                else:
-                                    stats["times_second_half"].append(response_time)
-                            elif task_type == "recommendation":
-                                stats["times_recommendation"].append(response_time)
-                            elif task_type == "recognition":
-                                stats["times_recognition"].append(response_time)
+                            stats["times_per_turn"][msg_idx].append(response_time)
                                 
                             msg_success = True
                             
-                            # Log what happened to see progress
+                            # Log what happened to see progress without truncation
                             ai_text = response.get("content", "")
-                            logger.info(f"User {user_index} [{task_type}] RT: {response_time:.2f}s -> {ai_text[:20]}...")
+                            ai_text_clean = ai_text.replace("\n", " ")
+                            logger.info(f"User {user_index} [Turn {msg_idx+1}: {task_type}] RT: {response_time:.2f}s -> {ai_text_clean}")
                             break
                         elif response.get("type") == "error":
                             logger.error(f"User {user_index} [{task_type}] received Server ERROR: {response.get('content')}")
                             stats["messages_failed"] += 1
+                            stats["errors_per_turn"][msg_idx] += 1
                             break
                     except asyncio.TimeoutError:
                         logger.error(f"User {user_index} [{task_type}] timed out waiting for message #{msg_idx+1}.")
                         stats["messages_failed"] += 1
+                        stats["errors_per_turn"][msg_idx] += 1
                         break
                         
                 if not msg_success and "messages_failed" not in str(stats):
@@ -184,16 +177,13 @@ async def main():
     total_messages_sent = sum(r["messages_sent"] for r in results)
     total_messages_failed = sum(r["messages_failed"] for r in results)
     
-    all_first_half = []
-    all_second_half = []
-    all_recommendation = []
-    all_recognition = []
+    times_per_turn_all = {i: [] for i in range(MESSAGES_PER_USER)}
+    errors_per_turn_all = {i: 0 for i in range(MESSAGES_PER_USER)}
     
     for r in results:
-        all_first_half.extend(r["times_first_half"])
-        all_second_half.extend(r["times_second_half"])
-        all_recommendation.extend(r["times_recommendation"])
-        all_recognition.extend(r["times_recognition"])
+        for i in range(MESSAGES_PER_USER):
+            times_per_turn_all[i].extend(r["times_per_turn"][i])
+            errors_per_turn_all[i] += r["errors_per_turn"][i]
         
     user_failure_rate = (total_users_failed / CONCURRENT_USERS) * 100
     msg_failure_rate = (total_messages_failed / total_messages_sent) * 100 if total_messages_sent else 0.0
@@ -208,11 +198,33 @@ async def main():
     print(f"👤 单人遇到失败的比率:      {user_failure_rate:.1f}% ({total_users_failed}/{CONCURRENT_USERS} 人经历了报错)")
     print(f"❌ 单轮对话失败的比率:      {msg_failure_rate:.1f}% ({total_messages_failed}/{total_messages_sent} 次对话丢失或超限)")
     print("-" * 60)
-    print("📊【延迟性能分析 (Latency Analysis)】")
-    print(f"  📝 前半段闲聊平均延迟 (上下文短): {calculate_avg(all_first_half):.2f} 秒")
-    print(f"  📝 后半段闲聊平均延迟 (上下文长): {calculate_avg(all_second_half):.2f} 秒  <-- (如果这个显著比前半段高，说明内存越来越大拖慢了推理)")
-    print(f"  🍽️ 餐厅推荐节点专项延迟 (Search): {calculate_avg(all_recommendation):.2f} 秒")
-    print(f"  🍔 视觉图像识别专项延迟 (Vision Model+RAG): {calculate_avg(all_recognition):.2f} 秒")
+    print("📊【每轮对话性能统计 (Per-Turn Analytics)】")
+    
+    for i in range(MESSAGES_PER_USER):
+        turn_times = times_per_turn_all[i]
+        turn_errors = errors_per_turn_all[i]
+        # In this script structure, turn content maps to msg_idx:
+        # i < regular_msgs -> chitchat
+        # i == regular_msgs -> recommendation
+        # i > regular_msgs -> recognition
+        regular_msgs = max(0, MESSAGES_PER_USER - 2)
+        if i < regular_msgs:
+            task_name = "闲聊 (Chitchat)"
+        elif i == regular_msgs:
+            task_name = "餐厅推荐 (Recommendation)"
+        else:
+            task_name = "食物识别 (Recognition)"
+            
+        avg_time = calculate_avg(turn_times)
+        max_time = max(turn_times) if turn_times else 0.0
+        success_count = len(turn_times)
+        attempt_count = success_count + turn_errors
+        error_rate = (turn_errors / attempt_count * 100) if attempt_count > 0 else 0.0
+        
+        print(f"  🟢 第 {i+1} 轮 [{task_name}]:")
+        print(f"     - 平均延迟: {avg_time:.2f} 秒 | 最大延迟: {max_time:.2f} 秒")
+        print(f"     - 错误率:   {error_rate:.1f}% ({turn_errors}/{attempt_count} 失败)")
+        
     print("="*60)
     
     try:
