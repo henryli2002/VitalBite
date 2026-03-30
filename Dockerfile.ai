@@ -13,4 +13,4 @@ COPY langgraph_app/ /app/langgraph_app/
 COPY models.py langgraph_server.py /app/
 
 EXPOSE 8001
-CMD ["uvicorn", "langgraph_server:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "langgraph_server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1", "--backlog", "1024", "--timeout-keep-alive", "120"]

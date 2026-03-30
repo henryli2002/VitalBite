@@ -17,4 +17,4 @@ COPY models.py chat_manager.py db.py web_server.py /app/
 RUN mkdir -p /app/data
 
 EXPOSE 8000
-CMD ["uvicorn", "web_server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "web_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--backlog", "2048", "--timeout-keep-alive", "120"]

@@ -18,12 +18,12 @@ from typing import Callable, Any, Dict
 # Semaphore limits (name -> max_concurrent)
 _SEMAPHORE_LIMITS: Dict[str, int] = {
     "intent":          200,   # Lightweight text classification
-    "chitchat":        100,   # Flash-lite text, ~1s/req
-    "recommendation":   100,   # LLM + Google Maps API + LLM, moderate
-    "recognition":      30,   # HEAVY: Vision + FAISS. Each req carries ~2-4MB base64 image.
-    "tutorial":         100,   # Medium-weight text LLM
-    "goalplanning":     100,   # Needs full history pull, high memory per req
-    "fndds":            24,   # Thread pool backpressure for FAISS CPU retrieval
+    "chitchat":        200,   # Flash-lite text, ~1s/req
+    "recommendation":   200,   # LLM + Google Maps API + LLM, moderate
+    "recognition":      200,   # HEAVY: Vision + FAISS. Each req carries ~2-4MB base64 image.
+    "tutorial":         200,   # Medium-weight text LLM
+    "goalplanning":     200,   # Needs full history pull, high memory per req
+    "fndds":            36,   # Thread pool backpressure for FAISS CPU retrieval
 }
 
 # Runtime cache: created per event-loop at first access
