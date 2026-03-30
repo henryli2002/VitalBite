@@ -42,6 +42,9 @@ class GraphState(TypedDict, total=False):
     # User profile (age, height, weight, health conditions, etc.)
     user_profile: Optional[Dict[str, Any]]
     
+    # User context (location lat/lng, IP address, etc. sent from frontend)
+    user_context: Optional[Dict[str, Any]]
+    
     # Analysis layer
     analysis: AnalysisData
     

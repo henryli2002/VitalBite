@@ -19,13 +19,13 @@ class SearchRestaurantsInput(BaseModel):
 
 
 @tool("get_user_location_by_ip")
-def get_user_location_by_ip_tool() -> str:
+def get_user_location_by_ip_tool(ip_address: Optional[str] = None) -> str:
     """
     Get the user's current approximate location (latitude and longitude) based on their IP address.
     Use this when the user hasn't provided their explicit location but you need coordinates for searching.
     Returns a JSON string containing lat and lng, or an error status.
     """
-    loc = get_location_from_ip()
+    loc = get_location_from_ip(ip_address)
     if loc:
         return json.dumps({"status": "success", "lat": loc[0], "lng": loc[1]})
     else:
@@ -55,7 +55,7 @@ async def search_restaurants_tool(
         cuisine_type=cuisine_type,
         radius_km=radius_km,
         lat_lng=lat_lng,
-        max_results=max_results
+        max_results=max_results if max_results is not None else 5
     )
 
     if not results:

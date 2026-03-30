@@ -141,12 +141,21 @@ You are WABI, an expert food recommendation assistant.
         # Determine location fallback
         final_lat = None
         final_lng = None
-
-        # Currently default to IP location (async, non-blocking).
-        # TODO: Update this to use explicit user location or frontend provided lat/lng
-        ip_loc = await get_location_from_ip_async()
-        if ip_loc:
-            final_lat, final_lng = ip_loc
+        
+        # 1. Try to get precise location from user_context (frontend Geolocation API)
+        user_context = state.get("user_context") or {}
+        if user_context.get("lat") is not None and user_context.get("lng") is not None:
+            final_lat = user_context.get("lat")
+            final_lng = user_context.get("lng")
+            logger.info(f"[{state.get('user_id')}] Using precise frontend location: lat={final_lat}, lng={final_lng}")
+        else:
+            # 2. Fallback to IP-based location
+            client_ip = user_context.get("user_ip")
+            logger.info(f"[{state.get('user_id')}] No frontend location. Falling back to IP-based location for IP: {client_ip}")
+            ip_loc = await get_location_from_ip_async(client_ip)
+            if ip_loc:
+                final_lat, final_lng = ip_loc
+                logger.info(f"[{state.get('user_id')}] Obtained IP location: lat={final_lat}, lng={final_lng}")
 
         # Step 2: Get restaurant recommendations using actual tool
         raw_result = await search_restaurants_tool.ainvoke(

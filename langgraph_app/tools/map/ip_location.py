@@ -23,69 +23,83 @@ _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 _ip_location_cache: Optional[Tuple[float, float]] = None
 
 
-async def get_location_from_ip_async() -> Optional[Tuple[float, float]]:
+async def get_location_from_ip_async(ip_address: Optional[str] = None) -> Optional[Tuple[float, float]]:
     """
-    Async version: Get lat/lng from server's public IP.
+    Async version: Get lat/lng from a specific IP address, or the server's public IP if None.
     Results are cached in-memory (process-level) and Redis (cross-restart).
     """
     global _ip_location_cache
 
-    # Level 1: In-process memory cache (0ms)
-    if _ip_location_cache is not None:
+    # If asking for server IP (no IP provided)
+    is_server_ip = not ip_address or ip_address in ["127.0.0.1", "localhost", "0.0.0.0"]
+    
+    # Use global cache for server IP only
+    if is_server_ip and _ip_location_cache is not None:
         return _ip_location_cache
+
+    cache_key = f"wabi_cache:ip_location:{ip_address}" if not is_server_ip else "wabi_cache:ip_location"
 
     # Level 2: Redis cache (sub-ms)
     try:
-        cached = await _redis_client.get("wabi_cache:ip_location")
+        cached = await _redis_client.get(cache_key)
         if cached:
             data = json.loads(cached)
-            _ip_location_cache = (data["lat"], data["lng"])
-            logger.info(f"IP location loaded from Redis cache: {_ip_location_cache}")
-            return _ip_location_cache
+            result = (data["lat"], data["lng"])
+            if is_server_ip:
+                _ip_location_cache = result
+            logger.info(f"IP location loaded from Redis cache ({ip_address or 'server'}): {result}")
+            return result
     except Exception as e:
         logger.warning(f"Redis IP cache read failed: {e}")
 
     # Level 3: Live HTTP call (async, non-blocking)
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get("http://ip-api.com/json/", timeout=5.0)
+            url = f"http://ip-api.com/json/{ip_address}" if not is_server_ip else "http://ip-api.com/json/"
+            response = await client.get(url, timeout=5.0)
             response.raise_for_status()
             data = response.json()
             if data.get("status") == "success":
                 result = (data.get("lat"), data.get("lon"))
-                _ip_location_cache = result
-                # Cache in Redis for 1 hour
+                
+                if is_server_ip:
+                    _ip_location_cache = result
+                    
+                # Cache in Redis for 1 hour (server) or 24 hours (user IP)
+                ttl = 3600 if is_server_ip else 86400
                 try:
                     await _redis_client.setex(
-                        "wabi_cache:ip_location", 3600,
+                        cache_key, ttl,
                         json.dumps({"lat": result[0], "lng": result[1]})
                     )
                 except Exception:
                     pass
-                logger.info(f"IP location fetched live: {result}")
+                logger.info(f"IP location fetched live ({ip_address or 'server'}): {result}")
                 return result
     except Exception as e:
-        logger.warning(f"Failed to get location from IP (async): {e}")
+        logger.warning(f"Failed to get location from IP {ip_address} (async): {e}")
     return None
 
 
-def get_location_from_ip() -> Optional[Tuple[float, float]]:
+def get_location_from_ip(ip_address: Optional[str] = None) -> Optional[Tuple[float, float]]:
     """Synchronous fallback — returns cached value or None.
     
     IMPORTANT: This should NOT be called in async code paths anymore.
     Use get_location_from_ip_async() instead.
     """
-    if _ip_location_cache is not None:
+    is_server_ip = not ip_address or ip_address in ["127.0.0.1", "localhost", "0.0.0.0"]
+    if is_server_ip and _ip_location_cache is not None:
         return _ip_location_cache
     
     # Synchronous fallback for backwards compatibility
     import requests
     try:
-        response = requests.get("http://ip-api.com/json/", timeout=3)
+        url = f"http://ip-api.com/json/{ip_address}" if not is_server_ip else "http://ip-api.com/json/"
+        response = requests.get(url, timeout=3)
         response.raise_for_status()
         data = response.json()
         if data.get("status") == "success":
             return data.get("lat"), data.get("lon")
     except Exception as e:
-        logger.warning(f"Failed to get location from IP: {e}")
+        logger.warning(f"Failed to get location from IP {ip_address}: {e}")
     return None

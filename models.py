@@ -46,6 +46,8 @@ class WSIncoming(BaseModel):
     content: str = Field("", description="Text content or base64 image data")
     text: str = Field("", description="Text accompanying an image upload")
     mime_type: str = Field("image/jpeg", description="MIME type for image uploads")
+    lat: Optional[float] = Field(None, description="User's current latitude")
+    lng: Optional[float] = Field(None, description="User's current longitude")
 
 
 class WSOutgoing(BaseModel):

@@ -164,6 +164,7 @@ class ChatManager:
         self,
         user_id: str,
         content: Any,
+        user_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Process a user message through the LangGraph graph."""
         now = datetime.now(timezone.utc).isoformat()
@@ -214,7 +215,8 @@ class ChatManager:
             "thread_id": invocation_id,
             "invoke_full_history": False,
             "full_messages": None,
-            "response_channel": f"response_{invocation_id}"
+            "response_channel": f"response_{invocation_id}",
+            "user_context": user_context or {},
         }
 
         # Redis PubSub and Job Queue pattern

@@ -59,6 +59,7 @@ async def process_task(payload: Dict[str, Any]):
         "user_id": user_id,
         "user_name": payload.get("user_name"),
         "user_profile": payload.get("user_profile"),
+        "user_context": payload.get("user_context", {}),
     }
     
     config = {"configurable": {"thread_id": thread_id}}
@@ -72,13 +73,14 @@ async def process_task(payload: Dict[str, Any]):
         # If intent is goalplanning and we have full history provided, re-invoke
         if detected_intent == "goalplanning" and payload.get("invoke_full_history") and payload.get("full_messages"):
             logger.info(f"[{user_id}] Goalplanning detected in Queue. Reprocessing with FULL history.")
-            full_msgs = build_langchain_messages(payload.get("full_messages"))
+            full_msgs = build_langchain_messages(payload.get("full_messages", []))
             full_state = {
                 "messages": full_msgs,
                 "session_id": payload.get("session_id", ""),
                 "user_id": user_id,
                 "user_name": payload.get("user_name"),
                 "user_profile": payload.get("user_profile"),
+                "user_context": payload.get("user_context", {}),
             }
             full_config = {"configurable": {"thread_id": f"{thread_id}_full"}}
             result = await graph.ainvoke(full_state, config=full_config)

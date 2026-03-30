@@ -12,6 +12,7 @@ const state = {
     activeUserId: null,
     ws: null,
     pendingImage: null, // { base64, mimeType }
+    userLocation: { lat: null, lng: null }, // Cached user geolocation
 };
 
 // ---------------------------------------------------------------------------
@@ -276,10 +277,26 @@ function disconnectWS() {
 // Sending Messages
 // ---------------------------------------------------------------------------
 
-function sendMessage() {
+async function sendMessage() {
     const text = dom.messageInput.value.trim();
     if (!text && !state.pendingImage) return;
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+
+    // Disable input while waiting
+    dom.messageInput.disabled = true;
+    dom.btnSend.disabled = true;
+    const oldPlaceholder = dom.messageInput.placeholder;
+    dom.messageInput.placeholder = "Waiting for location permission...";
+
+    // Wait for the initial location prompt to resolve (allow, deny, or timeout)
+    if (locationPromise) {
+        await locationPromise;
+    }
+
+    // Re-enable input
+    dom.messageInput.disabled = false;
+    dom.btnSend.disabled = false;
+    dom.messageInput.placeholder = oldPlaceholder;
 
     const now = new Date().toISOString();
 
@@ -291,6 +308,8 @@ function sendMessage() {
                 content: state.pendingImage.base64,
                 text: text,
                 mime_type: state.pendingImage.mimeType,
+                lat: state.userLocation.lat,
+                lng: state.userLocation.lng,
             })
         );
         // Show in UI
@@ -304,6 +323,8 @@ function sendMessage() {
             JSON.stringify({
                 type: 'message',
                 content: text,
+                lat: state.userLocation.lat,
+                lng: state.userLocation.lng,
             })
         );
         appendMessage('user', text, now);
@@ -311,6 +332,7 @@ function sendMessage() {
 
     dom.messageInput.value = '';
     dom.messageInput.style.height = 'auto';
+    dom.messageInput.focus();
     scrollToBottom();
 
     // Update user meta
@@ -603,7 +625,52 @@ dom.searchInput.addEventListener('input', (e) => {
 });
 
 // ---------------------------------------------------------------------------
+// Geolocation Initialization
+// ---------------------------------------------------------------------------
+
+// A promise that resolves when geolocation succeeds, fails, or is denied.
+// We give it a generous timeout (e.g. 15s) so it doesn't block forever if the user ignores the prompt.
+let locationPromise = null;
+
+function initGeolocation() {
+    if (!('geolocation' in navigator)) {
+        console.warn('Geolocation is not supported by this browser.');
+        locationPromise = Promise.resolve();
+        return;
+    }
+
+    locationPromise = new Promise((resolve) => {
+        // Fallback timeout in case the user just leaves the permission prompt open indefinitely
+        const timeoutId = setTimeout(() => {
+            console.warn('Geolocation prompt timed out (user ignored).');
+            resolve();
+        }, 15000);
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                clearTimeout(timeoutId);
+                state.userLocation.lat = position.coords.latitude;
+                state.userLocation.lng = position.coords.longitude;
+                console.log('User location acquired:', state.userLocation);
+                resolve();
+            },
+            (error) => {
+                clearTimeout(timeoutId);
+                console.warn('Geolocation failed or denied:', error.message);
+                resolve();
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
 loadUsers();
+initGeolocation();

@@ -136,6 +136,14 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
     active_connections[user_id] = websocket
     logger.info(f"WebSocket connected: {user_id}")
 
+    # Try to get the real user IP
+    client_ip = None
+    if websocket.client:
+        client_ip = websocket.client.host
+    forwarded = websocket.headers.get("x-forwarded-for")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+
     try:
         while True:
             # Receive message from client
@@ -164,8 +172,15 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                 else:
                     content = incoming.content
 
+                # Pass user context along to LangGraph
+                user_context = {
+                    "lat": incoming.lat,
+                    "lng": incoming.lng,
+                    "user_ip": client_ip,
+                }
+
                 # Process through chat manager which invokes AI microservice
-                ai_response = await chat_manager.process_message(user_id, content)
+                ai_response = await chat_manager.process_message(user_id, content, user_context=user_context)
 
                 # Send AI response
                 response = WSOutgoing(
