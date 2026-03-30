@@ -289,9 +289,9 @@ async function sendMessage() {
     dom.messageInput.placeholder = "Waiting for location permission...";
 
     // Wait for the initial location prompt to resolve (allow, deny, or timeout)
-    if (locationPromise) {
-        await locationPromise;
-    }
+    // Or fetch a fresh location if already resolved
+    locationPromise = requestLocation();
+    await locationPromise;
 
     // Re-enable input
     dom.messageInput.disabled = false;
@@ -632,14 +632,13 @@ dom.searchInput.addEventListener('input', (e) => {
 // We give it a generous timeout (e.g. 15s) so it doesn't block forever if the user ignores the prompt.
 let locationPromise = null;
 
-function initGeolocation() {
+function requestLocation() {
     if (!('geolocation' in navigator)) {
         console.warn('Geolocation is not supported by this browser.');
-        locationPromise = Promise.resolve();
-        return;
+        return Promise.resolve();
     }
 
-    locationPromise = new Promise((resolve) => {
+    return new Promise((resolve) => {
         // Fallback timeout in case the user just leaves the permission prompt open indefinitely
         const timeoutId = setTimeout(() => {
             console.warn('Geolocation prompt timed out (user ignored).');
@@ -662,10 +661,15 @@ function initGeolocation() {
             {
                 enableHighAccuracy: true,
                 timeout: 10000,
-                maximumAge: 0
+                maximumAge: 0 // Force fetching a new location
             }
         );
     });
+}
+
+function initGeolocation() {
+    // Initial fetch on load
+    locationPromise = requestLocation();
 }
 
 // ---------------------------------------------------------------------------
