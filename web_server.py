@@ -152,7 +152,7 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
 
             # Send typing indicator
             await websocket.send_json(
-                WSOutgoing(type="typing", content="").model_dump()
+                WSOutgoing(type="typing", role="assistant", content="").model_dump()
             )
 
             try:
@@ -180,7 +180,21 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                 }
 
                 # Process through chat manager which invokes AI microservice
-                ai_response = await chat_manager.process_message(user_id, content, user_context=user_context)
+                ai_response = ""
+                async for ai_chunk in chat_manager.process_message(user_id, content, user_context=user_context):
+                    if ai_chunk.get("type") == "thinking":
+                        # Forward thinking chunk to frontend
+                        thinking_response = WSOutgoing(
+                            type="thinking",
+                            role="assistant",
+                            content=ai_chunk.get("node", ""),
+                            analysis=ai_chunk.get("analysis", {}),
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                        )
+                        await websocket.send_json(thinking_response.model_dump())
+                    elif ai_chunk.get("type") == "final":
+                        ai_response = ai_chunk.get("text", "")
+                        break
 
                 # Send AI response
                 response = WSOutgoing(
@@ -195,6 +209,7 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                 logger.error(f"Error processing message for {user_id}: {e}", exc_info=True)
                 error_response = WSOutgoing(
                     type="error",
+                    role="assistant",
                     content=f"Error: {str(e)}",
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
@@ -219,5 +234,6 @@ async def startup():
     load_dotenv()
     logging.basicConfig(level=logging.INFO)
     # Initialize SQLite database tables
-    await chat_manager.store.init_db()
+    if hasattr(chat_manager.store, "init_db"):
+        await chat_manager.store.init_db()  # type: ignore
     logger.info("WABI Chat Web Server started (SQLite DB initialized)")

@@ -52,8 +52,10 @@ class WSIncoming(BaseModel):
 
 class WSOutgoing(BaseModel):
     """WebSocket message from server to client."""
-    type: str = Field(..., description="'message', 'error', 'typing', 'history'")
+    type: str = Field(..., description="'message', 'error', 'typing', 'history', 'thinking'")
     role: str = Field("assistant", description="'user' or 'assistant'")
     content: str = ""
     timestamp: str = ""
     messages: Optional[List[ChatMessage]] = None
+    analysis: Optional[Dict[str, Any]] = None
+    node: Optional[str] = None

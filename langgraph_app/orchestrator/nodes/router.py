@@ -1,20 +1,19 @@
 """Intent routing node."""
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, Optional
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.tracked_llm import get_tracked_llm
 from langgraph_app.config import config
 from langgraph_app.utils.logger import get_logger
 from pydantic import BaseModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph_app.utils.utils import (
-    get_all_user_text,
-)
+from langchain_core.messages import SystemMessage
 
 import time
 import re
-from typing import Tuple
 import asyncio
+import json
+import os
+import redis.asyncio as redis
 
 logger = get_logger(__name__)
 
@@ -31,6 +30,45 @@ class IntentAnalysis(BaseModel):
 
 from langgraph_app.utils.semaphores import with_semaphore
 
+
+def _extract_text_from_chunk_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    out.append(text)
+        return "".join(out)
+    return ""
+
+
+def _extract_field(text: str, field_name: str) -> str:
+    pattern = rf"{field_name}\s*:\s*(.*?)(?=\n[A-Z_]+\s*:|$)"
+    m = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
+def _parse_intent_output(raw_text: str) -> Optional[IntentAnalysis]:
+    intent = _extract_field(raw_text, "INTENT").lower()
+    confidence_str = _extract_field(raw_text, "CONFIDENCE")
+    reasoning = _extract_field(raw_text, "REASONING")
+    allowed = {"recognition", "recommendation", "chitchat", "tutorial", "goalplanning"}
+    if intent not in allowed:
+        return None
+    try:
+        confidence = float(confidence_str)
+    except Exception:
+        return None
+    confidence = max(0.0, min(1.0, confidence))
+    if not reasoning:
+        return None
+    return IntentAnalysis(intent=intent, confidence=confidence, reasoning=reasoning)
+
 @with_semaphore("intent")
 async def intent_router_node(state: GraphState) -> NodeOutput:
     """
@@ -39,6 +77,7 @@ async def intent_router_node(state: GraphState) -> NodeOutput:
     """
     client = get_tracked_llm(module="router", node_name="intent_router")
     messages = state.get("messages", [])
+    response_channel = state.get("response_channel")
 
     current_hour = time.localtime().tm_hour
     current_minute = time.localtime().tm_min
@@ -77,19 +116,77 @@ Current Time: {current_hour}:{current_minute:02d} ({meal_time}){profile_context}
 5. "chitchat": Default. Greetings, unrelated topics, or non-food/blurry images.
 
 [CONSTRAINTS]
-Output exactly matching the requested JSON schema (intent, confidence, reasoning)."""
+Output with EXACTLY this plain-text format (no markdown, no code block, no extra labels):
+INTENT: <recognition|recommendation|chitchat|tutorial|goalplanning>
+CONFIDENCE: <0.00-1.00>
+REASONING: <brief but specific why this intent fits the user message>"""
 
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            structured_llm = client.with_structured_output(IntentAnalysis)
             messages_to_send = [SystemMessage(content=system_prompt)] + messages
 
             if last_error:
-                error_feedback = f"Your previous response failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
+                error_feedback = f"Your previous response failed validation: {str(last_error)}. Return strictly in INTENT/CONFIDENCE/REASONING format."
                 messages_to_send.append(SystemMessage(content=error_feedback))
 
-            result = await structured_llm.ainvoke(messages_to_send, config={"callbacks": []})
+            streamed_text = ""
+            last_published_reasoning = ""
+            redis_client = None
+            try:
+                if response_channel:
+                    redis_url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
+                    redis_client = redis.from_url(redis_url, decode_responses=True)
+            except Exception:
+                redis_client = None
+
+            async for chunk in client.astream(messages_to_send, config={"callbacks": []}):
+                piece = _extract_text_from_chunk_content(getattr(chunk, "content", ""))
+                if not piece:
+                    continue
+                streamed_text += piece
+
+                if redis_client and response_channel:
+                    intent_so_far = _extract_field(streamed_text, "INTENT").lower()
+                    confidence_so_far = _extract_field(streamed_text, "CONFIDENCE")
+                    reasoning_so_far = _extract_field(streamed_text, "REASONING")
+                    if reasoning_so_far and reasoning_so_far != last_published_reasoning:
+                        if len(reasoning_so_far) - len(last_published_reasoning) < 12 and not reasoning_so_far.endswith((".", "!", "?", "。", "！", "？", ";", "；")):
+                            continue
+                        try:
+                            confidence_value = float(confidence_so_far) if confidence_so_far else None
+                        except Exception:
+                            confidence_value = None
+                        partial_payload = {
+                            "status": "partial",
+                            "node": "intent_router",
+                            "analysis": {
+                                "intent": intent_so_far or "chitchat",
+                                "confidence": confidence_value,
+                                "reasoning": reasoning_so_far,
+                                "_stream": True,
+                            },
+                        }
+                        try:
+                            await redis_client.publish(response_channel, json.dumps(partial_payload))
+                            last_published_reasoning = reasoning_so_far
+                        except Exception as publish_err:
+                            logger.warning(f"[router] Streaming publish failed, continue without partial stream: {publish_err}")
+                            try:
+                                await redis_client.aclose()
+                            except Exception:
+                                pass
+                            redis_client = None
+
+            if redis_client:
+                try:
+                    await redis_client.aclose()
+                except Exception:
+                    pass
+
+            result = _parse_intent_output(streamed_text)
+            if result is None:
+                raise ValueError(f"Invalid router output format: {streamed_text[:300]}")
 
             logger.info(
                 f"[router] Intent detected: {result.intent} (confidence: {result.confidence})"
@@ -98,6 +195,8 @@ Output exactly matching the requested JSON schema (intent, confidence, reasoning
             return {
                 "analysis": {
                     "intent": result.intent,
+                    "confidence": result.confidence,
+                    "reasoning": result.reasoning,
                     "safety_safe": True,
                     "safety_reason": None,
                 },
@@ -126,6 +225,8 @@ Output exactly matching the requested JSON schema (intent, confidence, reasoning
     return {
         "analysis": {
             "intent": "chitchat",
+            "confidence": 0.0,
+            "reasoning": "Intent router failed after retries, fallback to chitchat.",
             "safety_safe": True,
             "safety_reason": None,
         },

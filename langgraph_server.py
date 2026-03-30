@@ -60,12 +60,29 @@ async def process_task(payload: Dict[str, Any]):
         "user_name": payload.get("user_name"),
         "user_profile": payload.get("user_profile"),
         "user_context": payload.get("user_context", {}),
+        "response_channel": response_channel,
     }
     
     config = {"configurable": {"thread_id": thread_id}}
     
     try:
-        result = await graph.ainvoke(initial_state, config=config)
+        accumulated_state = initial_state.copy()
+        
+        async for output in graph.astream(initial_state, config=config):
+            for node_name, node_output in output.items():
+                logger.info(f"[{user_id}] Node completed: {node_name}")
+                accumulated_state.update(node_output)
+                if "analysis" in node_output and response_channel:
+                    # Stream the intent analysis as a partial update
+                    partial_payload = {
+                        "status": "partial",
+                        "node": node_name,
+                        "analysis": node_output["analysis"]
+                    }
+                    if response_channel:
+                        await redis_client.publish(response_channel, json.dumps(partial_payload))
+                
+        result = accumulated_state
         
         analysis = result.get("analysis", {})
         detected_intent = analysis.get("intent", "chitchat")
@@ -81,9 +98,24 @@ async def process_task(payload: Dict[str, Any]):
                 "user_name": payload.get("user_name"),
                 "user_profile": payload.get("user_profile"),
                 "user_context": payload.get("user_context", {}),
+                "response_channel": response_channel,
             }
             full_config = {"configurable": {"thread_id": f"{thread_id}_full"}}
-            result = await graph.ainvoke(full_state, config=full_config)
+            
+            accumulated_state = full_state.copy()
+            async for output in graph.astream(full_state, config=full_config):
+                for node_name, node_output in output.items():
+                    logger.info(f"[{user_id}] Goalplanning Node completed: {node_name}")
+                    accumulated_state.update(node_output)
+                    if "analysis" in node_output and response_channel:
+                        partial_payload = {
+                            "status": "partial",
+                            "node": node_name,
+                            "analysis": node_output["analysis"]
+                        }
+                        await redis_client.publish(response_channel, json.dumps(partial_payload))
+            
+            result = accumulated_state
             
         # Extract final AI response (safe null-check)
         final_msg = "No response generated."

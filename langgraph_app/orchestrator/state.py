@@ -19,6 +19,8 @@ def _add_logs(left: List[dict], right: List[dict]) -> List[dict]:
 class AnalysisData(TypedDict, total=False):
     """Analysis results from guardrail and routing."""
     intent: Literal["recognition", "recommendation", "chitchat", "tutorial", "guardrails", "goalplanning"]
+    confidence: Optional[float]
+    reasoning: Optional[str]
     safety_safe: bool
     safety_reason: Optional[str]
     safety_category: Optional[str]
@@ -44,6 +46,7 @@ class GraphState(TypedDict, total=False):
     
     # User context (location lat/lng, IP address, etc. sent from frontend)
     user_context: Optional[Dict[str, Any]]
+    response_channel: Optional[str]
     
     # Analysis layer
     analysis: AnalysisData

@@ -8,6 +8,7 @@ Provides:
 import time
 import uuid
 import logging
+import asyncio
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
 import os
@@ -165,8 +166,8 @@ class ChatManager:
         user_id: str,
         content: Any,
         user_context: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Process a user message through the LangGraph graph."""
+    ):
+        """Process a user message through the LangGraph graph, yielding updates."""
         now = datetime.now(timezone.utc).isoformat()
 
         # Build the user message
@@ -189,7 +190,11 @@ class ChatManager:
 
         # --- Phase 1: Quick intent detection with today's history ---
         day_boundary = _get_day_boundary()
-        today_history = await getattr(self.store, "load_history_since", self.store.load_history)(user_id, day_boundary)
+        load_method = getattr(self.store, "load_history_since", None)
+        if load_method:
+            today_history = await load_method(user_id, day_boundary)
+        else:
+            today_history = await self.store.load_history(user_id)
 
         import json
         for msg in today_history:
@@ -222,7 +227,6 @@ class ChatManager:
         # Redis PubSub and Job Queue pattern
         try:
             import json
-            import asyncio
             import redis.asyncio as redis
             
             wabi_redis_url = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
@@ -239,17 +243,28 @@ class ChatManager:
             detected_intent = "chitchat"
             
             start_wait = time.time()
+            phase_1_done = False
             # Wait up to 120 seconds in queue
             while time.time() - start_wait < 120.0:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                 if message and message.get('type') == 'message':
                     data = json.loads(message['data'])
                     
+                    if data.get("status") == "partial":
+                        yield {
+                            "type": "thinking",
+                            "node": data.get("node"),
+                            "analysis": data.get("analysis", {})
+                        }
+                        continue
+                    
                     # Check if it was a backend Node Crash
                     if isinstance(data, dict) and data.get("status") == "error":
                         error_msg = data.get("message", "Unknown Backend Crash")
                         logger.error(f"Intercepted backend crash for user {user_id}: {error_msg}")
-                        return f"🔴 致命后端错误: {error_msg}"
+                        ai_text = f"🔴 致命后端错误: {error_msg}"
+                        phase_1_done = True
+                        break
                     
                     # Parse the new nested JSON payload from langgraph_server.py
                     messages = data.get("messages", [])
@@ -259,10 +274,11 @@ class ChatManager:
                         ai_text = data.get('ai_text', ai_text)
                         
                     detected_intent = data.get("analysis", {}).get("intent", data.get("detected_intent", detected_intent))
+                    phase_1_done = True
                     break
             
             # Goal planning secondary pipeline
-            if detected_intent == "goalplanning":
+            if phase_1_done and detected_intent == "goalplanning":
                 logger.info(f"[{user_id}] Intent is goalplanning. Pushing Phase 2 job to queue with FULL history.")
                 full_history = await self.store.load_history(user_id)
                 import json
@@ -283,6 +299,15 @@ class ChatManager:
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if message and message.get('type') == 'message':
                         data = json.loads(message['data'])
+                        
+                        if data.get("status") == "partial":
+                            yield {
+                                "type": "thinking",
+                                "node": data.get("node"),
+                                "analysis": data.get("analysis", {})
+                            }
+                            continue
+
                         # Error check (same as Phase 1)
                         if isinstance(data, dict) and data.get("status") == "error":
                             error_msg = data.get("message", "Unknown Backend Crash")
@@ -308,4 +333,7 @@ class ChatManager:
         ai_timestamp = datetime.now(timezone.utc).isoformat()
         await self.store.save_message(user_id, "assistant", ai_text, ai_timestamp)
 
-        return ai_text
+        yield {
+            "type": "final",
+            "text": ai_text
+        }

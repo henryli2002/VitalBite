@@ -13,6 +13,7 @@ const state = {
     ws: null,
     pendingImage: null, // { base64, mimeType }
     userLocation: { lat: null, lng: null }, // Cached user geolocation
+    pendingAssistantMessageEl: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -213,6 +214,7 @@ function showWelcome() {
 
 async function loadHistory(userId) {
     dom.messagesScroll.innerHTML = '';
+    clearPendingAssistantMessage();
     const history = await apiGet(`/api/users/${userId}/history`);
     history.forEach((msg) => appendMessage(msg.role, msg.content, msg.timestamp));
     scrollToBottom();
@@ -238,10 +240,14 @@ function connectWS(userId) {
         const data = JSON.parse(event.data);
 
         if (data.type === 'typing') {
-            showTypingIndicator();
+            showThinkingPlaceholder();
+        } else if (data.type === 'thinking') {
+            removeTypingIndicator();
+            updateThinkingIndicator(data);
+            scrollToBottom();
         } else if (data.type === 'message') {
             removeTypingIndicator();
-            appendMessage(data.role, data.content, data.timestamp);
+            appendOrFinalizeAssistantMessage(data.content, data.timestamp);
             scrollToBottom();
             // Update user's message count
             const user = state.users.find((u) => u.user_id === userId);
@@ -252,6 +258,7 @@ function connectWS(userId) {
             }
         } else if (data.type === 'error') {
             removeTypingIndicator();
+            clearPendingAssistantMessage();
             appendMessage('assistant', `⚠️ ${data.content}`, data.timestamp);
             scrollToBottom();
         }
@@ -282,6 +289,8 @@ async function sendMessage() {
     if (!text && !state.pendingImage) return;
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
 
+    clearPendingAssistantMessage();
+
     // Disable input while waiting
     dom.messageInput.disabled = true;
     dom.btnSend.disabled = true;
@@ -290,7 +299,7 @@ async function sendMessage() {
 
     // Wait for the initial location prompt to resolve (allow, deny, or timeout)
     // Or fetch a fresh location if already resolved
-    locationPromise = requestLocation();
+    let locationPromise = requestLocation();
     await locationPromise;
 
     // Re-enable input
@@ -334,6 +343,9 @@ async function sendMessage() {
     dom.messageInput.style.height = 'auto';
     dom.messageInput.focus();
     scrollToBottom();
+
+    // Show thinking container immediately (no three-dot typing state)
+    showThinkingPlaceholder();
 
     // Update user meta
     const user = state.users.find((u) => u.user_id === state.activeUserId);
@@ -472,6 +484,34 @@ function appendMessage(role, content, timestamp) {
     dom.messagesScroll.appendChild(el);
 }
 
+function ensurePendingAssistantMessage() {
+    if (state.pendingAssistantMessageEl && state.pendingAssistantMessageEl.isConnected) {
+        return state.pendingAssistantMessageEl;
+    }
+
+    const el = document.createElement('div');
+    el.className = 'message assistant';
+    el.innerHTML = `
+        <div class="message-content"></div>
+        <span class="message-time"></span>
+    `;
+    dom.messagesScroll.appendChild(el);
+    state.pendingAssistantMessageEl = el;
+    return el;
+}
+
+function appendOrFinalizeAssistantMessage(content, timestamp) {
+    const pending = state.pendingAssistantMessageEl;
+    if (pending && pending.isConnected) {
+        const contentEl = pending.querySelector('.message-content');
+        contentEl.insertAdjacentHTML('beforeend', renderMarkdown(content));
+        pending.querySelector('.message-time').textContent = formatTime(timestamp);
+        state.pendingAssistantMessageEl = null;
+        return;
+    }
+    appendMessage('assistant', content, timestamp);
+}
+
 function showTypingIndicator() {
     removeTypingIndicator();
     const el = document.createElement('div');
@@ -484,6 +524,127 @@ function showTypingIndicator() {
     `;
     dom.messagesScroll.appendChild(el);
     scrollToBottom();
+}
+
+function updateThinkingIndicator(data) {
+    const nodeName = data.content || data.node || '';
+    if (nodeName !== 'intent_router' && nodeName !== 'router') return;
+
+    const pendingMessage = ensurePendingAssistantMessage();
+    let container = pendingMessage.querySelector('.thinking-container');
+    const thinkingText = extractThinkingText(data);
+
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'thinking-container';
+        container.innerHTML = `
+            <button type="button" class="thinking-chip" aria-expanded="false">
+                <span class="thinking-icon">✨</span>
+                <span class="thinking-title">Thinking</span>
+                <span class="thinking-summary"></span>
+                <span class="thinking-toggle">⌄</span>
+            </button>
+            <div class="thinking-content">
+                <ul class="thinking-logs"></ul>
+            </div>
+        `;
+        pendingMessage.querySelector('.message-content').prepend(container);
+
+        const chip = container.querySelector('.thinking-chip');
+        const content = container.querySelector('.thinking-content');
+        chip.addEventListener('click', () => {
+            const expanded = container.classList.toggle('expanded');
+            chip.setAttribute('aria-expanded', String(expanded));
+            content.style.maxHeight = expanded ? `${content.scrollHeight}px` : '0px';
+        });
+    }
+
+    const logs = container.querySelector('.thinking-logs');
+    let li = logs.querySelector('li[data-stream-item="intent"]');
+    if (!li) {
+        li = document.createElement('li');
+        li.dataset.streamItem = 'intent';
+        logs.appendChild(li);
+    }
+    if (li.textContent !== thinkingText) {
+        li.textContent = thinkingText;
+    }
+
+    const summary = container.querySelector('.thinking-summary');
+    summary.textContent = buildThinkingSummary(thinkingText);
+
+    const content = container.querySelector('.thinking-content');
+    if (container.classList.contains('expanded')) {
+        content.style.maxHeight = `${content.scrollHeight}px`;
+    }
+}
+
+function showThinkingPlaceholder() {
+    const pendingMessage = ensurePendingAssistantMessage();
+    let container = pendingMessage.querySelector('.thinking-container');
+    if (container) return;
+
+    container = document.createElement('div');
+    container.className = 'thinking-container';
+    container.innerHTML = `
+        <button type="button" class="thinking-chip" aria-expanded="false">
+            <span class="thinking-icon">✨</span>
+            <span class="thinking-title">Thinking</span>
+            <span class="thinking-summary">Thinking: ...</span>
+            <span class="thinking-toggle">⌄</span>
+        </button>
+        <div class="thinking-content">
+            <ul class="thinking-logs"></ul>
+        </div>
+    `;
+    pendingMessage.querySelector('.message-content').prepend(container);
+
+    const chip = container.querySelector('.thinking-chip');
+    const content = container.querySelector('.thinking-content');
+    chip.addEventListener('click', () => {
+        const expanded = container.classList.toggle('expanded');
+        chip.setAttribute('aria-expanded', String(expanded));
+        content.style.maxHeight = expanded ? `${content.scrollHeight}px` : '0px';
+    });
+}
+
+function buildThinkingSummary(text) {
+    const combined = `Thinking: ${text}`.replace(/\s+/g, ' ').trim();
+    const maxChars = window.innerWidth <= 768 ? 18 : 32;
+    if (combined.length <= maxChars) return combined;
+    return `${combined.slice(0, maxChars - 1)}…`;
+}
+
+function extractThinkingText(data) {
+    const analysis = data.analysis || {};
+    if (typeof analysis === 'string' && analysis.trim()) return analysis.trim();
+    if (analysis.intent && typeof analysis.intent === 'string') {
+        const confidencePart = typeof analysis.confidence === 'number'
+            ? ` (confidence ${Math.round(analysis.confidence * 100)}%)`
+            : '';
+        const reason = (analysis.reasoning && typeof analysis.reasoning === 'string')
+            ? analysis.reasoning.trim()
+            : '';
+        return reason
+            ? `Intent: ${analysis.intent}${confidencePart}. Reason: ${reason}`
+            : `Intent: ${analysis.intent}${confidencePart}`;
+    }
+    if (analysis.reasoning && typeof analysis.reasoning === 'string') return `Reason: ${analysis.reasoning.trim()}`;
+    const kv = Object.entries(analysis).filter(([, value]) => (
+        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ));
+    if (kv.length) {
+        return kv.map(([key, value]) => `${key}: ${String(value)}`).join(' | ');
+    }
+    return 'Intent route analyzed';
+}
+
+function clearPendingAssistantMessage() {
+    if (!state.pendingAssistantMessageEl) return;
+    if (state.pendingAssistantMessageEl.isConnected) {
+        state.pendingAssistantMessageEl.remove();
+    }
+    state.pendingAssistantMessageEl = null;
 }
 
 function removeTypingIndicator() {
