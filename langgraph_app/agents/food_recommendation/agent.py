@@ -165,7 +165,7 @@ You are WABI, an expert food recommendation assistant.
                 "radius_km": query_params.radius_km or 5.0,
                 "lat": final_lat,
                 "lng": final_lng,
-                "max_results": max(15, query_params.count or 15), # Keep 15 to allow LLM ample choice
+                "max_results": max(20, query_params.count or 20), # Keep 20 to allow LLM ample choice
             }
         )
 
@@ -204,9 +204,12 @@ Transform raw restaurant data into helpful, personalized suggestions.
 [CONTEXT]{profile_context}
 
 [CONSTRAINTS]
-1. PERSONALIZATION: CRITICAL - Actively reference the 'User Profile'. Highlight why these restaurants fit their goals, and explicitly warn if a restaurant conflicts with any allergies/diets!
-2. SCHEMA: Output strictly matching the requested JSON schema.
-3. LANGUAGE: The user's language is '{lang}'. Strictly abide by any explicit language requests from the user."""
+1. HEALTH-CONSCIOUS SELECTION: From the provided list, select the best 5 restaurants for a health-conscious user. If the user asks for a different number, follow that number. Prioritize options that are generally considered light and healthy.
+2. EXPLICIT REASONING: In the `summary` for each restaurant, you MUST include a brief explanation of why it's a healthy choice (e.g., "features grilled options," "known for fresh salads," "offers light and fresh dishes").
+3. HEALTH-AWARE CONCLUSION: In the `conclusion` field, add a gentle, encouraging healthy eating tip. If the user's request was for something less healthy (e.g., burgers, fried food), the tone should be encouraging and suggest moderation without being preachy.
+4. PERSONALIZATION: CRITICAL - Actively reference the 'User Profile'. Highlight why these restaurants fit their goals, and explicitly warn if a restaurant conflicts with any allergies/diets!
+5. SCHEMA: Output strictly matching the requested JSON schema.
+6. LANGUAGE: The user's language is '{lang}'. Strictly abide by any explicit language requests from the user."""
 
         local_messages_2 = messages.copy()
         local_messages_2.append(HumanMessage(content=formatting_prompt))
