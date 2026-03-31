@@ -503,6 +503,7 @@ function ensurePendingAssistantMessage() {
 function appendOrFinalizeAssistantMessage(content, timestamp) {
     const pending = state.pendingAssistantMessageEl;
     if (pending && pending.isConnected) {
+        finalizeThinkingContainer(pending);
         const contentEl = pending.querySelector('.message-content');
         contentEl.insertAdjacentHTML('beforeend', renderMarkdown(content));
         pending.querySelector('.message-time').textContent = formatTime(timestamp);
@@ -528,11 +529,10 @@ function showTypingIndicator() {
 
 function updateThinkingIndicator(data) {
     const nodeName = data.content || data.node || '';
-    if (nodeName !== 'intent_router' && nodeName !== 'router') return;
 
     const pendingMessage = ensurePendingAssistantMessage();
     let container = pendingMessage.querySelector('.thinking-container');
-    const thinkingText = extractThinkingText(data);
+    const thinkingText = extractThinkingText(data, nodeName);
 
     if (!container) {
         container = document.createElement('div');
@@ -560,14 +560,14 @@ function updateThinkingIndicator(data) {
     }
 
     const logs = container.querySelector('.thinking-logs');
-    let li = logs.querySelector('li[data-stream-item="intent"]');
+    let li = logs.querySelector(`li[data-stream-item="${nodeName || 'thinking'}"]`);
     if (!li) {
         li = document.createElement('li');
-        li.dataset.streamItem = 'intent';
+        li.dataset.streamItem = nodeName || 'thinking';
         logs.appendChild(li);
     }
-    if (li.textContent !== thinkingText) {
-        li.textContent = thinkingText;
+    if (li.innerHTML !== thinkingText) {
+        li.innerHTML = thinkingText;
     }
 
     const summary = container.querySelector('.thinking-summary');
@@ -590,7 +590,7 @@ function showThinkingPlaceholder() {
         <button type="button" class="thinking-chip" aria-expanded="false">
             <span class="thinking-icon">✨</span>
             <span class="thinking-title">Thinking</span>
-            <span class="thinking-summary">Thinking: ...</span>
+            <span class="thinking-summary">...</span>
             <span class="thinking-toggle">⌄</span>
         </button>
         <div class="thinking-content">
@@ -609,34 +609,71 @@ function showThinkingPlaceholder() {
 }
 
 function buildThinkingSummary(text) {
-    const combined = `Thinking: ${text}`.replace(/\s+/g, ' ').trim();
+    const plain = stripHtml(text).replace(/\s+/g, ' ').trim();
+    const combined = plain || '...';
     const maxChars = window.innerWidth <= 768 ? 18 : 32;
     if (combined.length <= maxChars) return combined;
     return `${combined.slice(0, maxChars - 1)}…`;
 }
 
-function extractThinkingText(data) {
+function extractThinkingText(data, nodeName = '') {
     const analysis = data.analysis || {};
-    if (typeof analysis === 'string' && analysis.trim()) return analysis.trim();
-    if (analysis.intent && typeof analysis.intent === 'string') {
+    if ((nodeName === 'intent_router' || nodeName === 'router') && analysis.intent && typeof analysis.intent === 'string') {
         const confidencePart = typeof analysis.confidence === 'number'
             ? ` (confidence ${Math.round(analysis.confidence * 100)}%)`
             : '';
         const reason = (analysis.reasoning && typeof analysis.reasoning === 'string')
             ? analysis.reasoning.trim()
             : '';
-        return reason
-            ? `Intent: ${analysis.intent}${confidencePart}. Reason: ${reason}`
-            : `Intent: ${analysis.intent}${confidencePart}`;
+        const body = reason
+            ? `${analysis.intent}${confidencePart}. ${reason}`
+            : `${analysis.intent}${confidencePart}`;
+        return formatThinkingStep('Recognizing user intent', body);
     }
-    if (analysis.reasoning && typeof analysis.reasoning === 'string') return `Reason: ${analysis.reasoning.trim()}`;
+    if (analysis.reasoning && typeof analysis.reasoning === 'string') {
+        const raw = analysis.reasoning.trim();
+        const match = raw.match(/^([^:]+):\s*([\s\S]*)$/);
+        if (match) {
+            const title = match[1].trim();
+            const body = match[2].trim();
+            return formatThinkingStep(title, body);
+        }
+        return formatThinkingStep('Thinking', raw);
+    }
+    if (typeof analysis === 'string' && analysis.trim()) return escapeHtml(analysis.trim());
     const kv = Object.entries(analysis).filter(([, value]) => (
         typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
     ));
     if (kv.length) {
-        return kv.map(([key, value]) => `${key}: ${String(value)}`).join(' | ');
+        return escapeHtml(kv.map(([key, value]) => `${key}: ${String(value)}`).join(' | '));
     }
-    return 'Intent route analyzed';
+    return '...';
+}
+
+function formatThinkingStep(title, body) {
+    const safeTitle = escapeHtml(title);
+    const safeBody = escapeHtml(body || '');
+    return `<span class="thinking-step-title">${safeTitle}:</span><br/><span class="thinking-step-body">${safeBody}</span>`;
+}
+
+function finalizeThinkingContainer(messageEl) {
+    const container = messageEl.querySelector('.thinking-container');
+    if (!container) return;
+    const chip = container.querySelector('.thinking-chip');
+    const title = container.querySelector('.thinking-title');
+    const summary = container.querySelector('.thinking-summary');
+    const content = container.querySelector('.thinking-content');
+    container.classList.remove('expanded');
+    chip.setAttribute('aria-expanded', 'false');
+    title.textContent = 'Show thinking';
+    summary.textContent = '';
+    content.style.maxHeight = '0px';
+}
+
+function stripHtml(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html || '';
+    return div.textContent || '';
 }
 
 function clearPendingAssistantMessage() {

@@ -32,6 +32,61 @@ MAX_CONCURRENT_WORKERS = 200
 WORKER_TASKS = []
 
 
+def build_thinking_partial(node_name: str, node_output: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build frontend-friendly partial thinking payload for each key node."""
+    if node_name in ("router", "intent_router"):
+        analysis = node_output.get("analysis")
+        if analysis:
+            return {"status": "partial", "node": "intent_router", "analysis": analysis}
+        return None
+
+    if node_name == "chitchat":
+        messages = node_output.get("messages", []) or []
+        answer = ""
+        if messages and isinstance(messages, list):
+            first = messages[0]
+            answer = getattr(first, "content", "") if first else ""
+        if answer:
+            return {
+                "status": "partial",
+                "node": "chitchat",
+                "analysis": {"reasoning": f"Answering: {str(answer)[:180]}"},
+            }
+        return None
+
+    if node_name == "recognition":
+        recog = node_output.get("recognition_result") or {}
+        final_analysis = recog.get("final_analysis") or []
+        if not isinstance(final_analysis, list) or not final_analysis:
+            return None
+        foods = [str(item.get("identified_name", "")) for item in final_analysis[:3] if isinstance(item, dict)]
+        estimates = [str(item.get("num_portions", "")) for item in final_analysis[:3] if isinstance(item, dict) and item.get("num_portions") is not None]
+        food_part = ", ".join([f for f in foods if f]) or "unknown foods"
+        est_part = ", ".join(estimates) if estimates else "n/a"
+        return {
+            "status": "partial",
+            "node": "recognition",
+            "analysis": {"reasoning": f"Recognizing food: {food_part}. Estimated portions: {est_part}"},
+        }
+
+    if node_name == "recommendation":
+        rec = node_output.get("recommendation_result") or {}
+        restaurants = rec.get("restaurants") or []
+        if not isinstance(restaurants, list) or not restaurants:
+            return None
+        names = [str(r.get("name", "")) for r in restaurants[:3] if isinstance(r, dict)]
+        names = [n for n in names if n]
+        if not names:
+            return None
+        return {
+            "status": "partial",
+            "node": "recommendation",
+            "analysis": {"reasoning": f"Finding restaurants: Found restaurants: {', '.join(names)}"},
+        }
+
+    return None
+
+
 def build_langchain_messages(history: List[Dict]) -> List[BaseMessage]:
     """Convert JSON messages back into LangChain message objects."""
     messages = []
@@ -72,14 +127,9 @@ async def process_task(payload: Dict[str, Any]):
             for node_name, node_output in output.items():
                 logger.info(f"[{user_id}] Node completed: {node_name}")
                 accumulated_state.update(node_output)
-                if "analysis" in node_output and response_channel:
-                    # Stream the intent analysis as a partial update
-                    partial_payload = {
-                        "status": "partial",
-                        "node": node_name,
-                        "analysis": node_output["analysis"]
-                    }
-                    if response_channel:
+                if response_channel:
+                    partial_payload = build_thinking_partial(node_name, node_output)
+                    if partial_payload:
                         await redis_client.publish(response_channel, json.dumps(partial_payload))
                 
         result = accumulated_state
@@ -107,13 +157,10 @@ async def process_task(payload: Dict[str, Any]):
                 for node_name, node_output in output.items():
                     logger.info(f"[{user_id}] Goalplanning Node completed: {node_name}")
                     accumulated_state.update(node_output)
-                    if "analysis" in node_output and response_channel:
-                        partial_payload = {
-                            "status": "partial",
-                            "node": node_name,
-                            "analysis": node_output["analysis"]
-                        }
-                        await redis_client.publish(response_channel, json.dumps(partial_payload))
+                    if response_channel:
+                        partial_payload = build_thinking_partial(node_name, node_output)
+                        if partial_payload:
+                            await redis_client.publish(response_channel, json.dumps(partial_payload))
             
             result = accumulated_state
             

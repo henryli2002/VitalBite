@@ -553,6 +553,19 @@ html, body {
     margin-top: 6px;
 }
 
+.thinking-step-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-1);
+    font-style: normal;
+}
+
+.thinking-step-body {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-2);
+}
+
 .typing-dot {
     width: 7px;
     height: 7px;
