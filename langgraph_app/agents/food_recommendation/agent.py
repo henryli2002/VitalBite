@@ -6,6 +6,7 @@ import json
 import asyncio
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.logger import get_logger
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, AnyMessage
@@ -121,7 +122,7 @@ You are WABI, an expert food recommendation assistant.
                     sys_content += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_1)}. Please correct your JSON output and ensure it strictly follows the schema."
 
                 query_params = await structured_llm.ainvoke(
-                    [SystemMessage(content=sys_content)] + local_messages,
+                    inject_dynamic_context([SystemMessage(content=sys_content)] + local_messages),
                     config={"callbacks": []},
                 )
                 break
@@ -225,7 +226,7 @@ Transform raw restaurant data into helpful, personalized suggestions.
                     sys_content_2 += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_2)}. Please correct your JSON output and ensure it strictly follows the schema."
 
                 structured_response = await structured_llm_2.ainvoke(
-                    [SystemMessage(content=sys_content_2)] + local_messages_2,
+                    inject_dynamic_context([SystemMessage(content=sys_content_2)] + local_messages_2),
                     config={"tags": ["final_node_output"]},
                 )
                 break

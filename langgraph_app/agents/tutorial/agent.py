@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, SystemMessage, AnyMessage
 from langgraph.types import interrupt
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.logger import get_logger
 from langgraph_app.utils.utils import (
     get_dominant_language,
@@ -55,6 +56,7 @@ Help the user understand and navigate the app's features: Food Recognition (need
     for attempt in range(3):
         try:
             messages_to_send = [SystemMessage(content=tutorial_prompt)] + messages
+            messages_to_send = inject_dynamic_context(messages_to_send)
             ai_message = await client.ainvoke(
                 messages_to_send, config={"tags": ["final_node_output"]}
             )

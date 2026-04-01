@@ -12,12 +12,76 @@ from __future__ import annotations
 
 from typing import Optional, Dict, Tuple, Any
 import os
+import datetime
+import platform
+
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage, BaseMessage
 
 from langgraph_app.config import config
 
 # Singleton cache: (provider, model, module) -> BaseChatModel instance
 _LLM_CACHE: Dict[Tuple[str, str, str], BaseChatModel] = {}
+
+
+def _get_dynamic_env_context() -> str:
+    """Returns a formatted string with the current time and host system information."""
+    try:
+        # Use timezone-aware datetime for UTC+8 (China Standard Time)
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        cst_now = utc_now.astimezone(datetime.timezone(datetime.timedelta(hours=8)))
+        formatted_time = cst_now.strftime('%Y-%m-%dT%H:%M:%S UTC+8')
+    except Exception:
+        # Fallback in case of any issue
+        now = datetime.datetime.now(datetime.timezone.utc)
+        formatted_time = now.isoformat()
+
+    system_info = f"{platform.system()} {platform.release()}"
+    return f"[System Environment: {formatted_time}, OS: {system_info}]"
+
+
+def inject_dynamic_context(messages: list) -> list:
+    """
+    Injects dynamic environment context into the last user message without
+    modifying the original list (e.g., from state).
+    """
+    if not messages:
+        return []
+
+    # Create a deep copy to avoid modifying the original list in the state
+    try:
+        messages_copy = [
+            msg.copy(deep=True) if isinstance(msg, BaseMessage) else msg.copy()
+            for msg in messages
+        ]
+    except (AttributeError, TypeError): # pragma: no cover
+        # Fallback for older LangChain versions or unexpected types
+        import copy
+        messages_copy = copy.deepcopy(messages)
+
+
+    last_message = messages_copy[-1]
+    dynamic_context = _get_dynamic_env_context()
+
+    # Check for LangChain's HumanMessage or a dict with role 'user'
+    is_human_message = isinstance(last_message, HumanMessage)
+    is_user_dict = isinstance(last_message, dict) and last_message.get("role") == "user"
+
+    if is_human_message:
+        # Ensure content is a string before concatenation
+        original_content = last_message.content
+        if isinstance(original_content, str):
+            last_message.content = f"{dynamic_context}\\n\\n{original_content}"
+        # If content is a list (e.g., for vision), we might need a more complex strategy,
+        # but for now, we'll only handle the string case.
+        
+    elif is_user_dict:
+        original_content = last_message.get("content", "")
+        if isinstance(original_content, str):
+            last_message["content"] = f"{dynamic_context}\\n\\n{original_content}"
+
+    return messages_copy
+
 
 
 def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = None, module: Optional[str] = None) -> BaseChatModel:

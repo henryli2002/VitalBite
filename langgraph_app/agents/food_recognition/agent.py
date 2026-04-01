@@ -10,6 +10,7 @@ from datetime import datetime
 from langgraph_app.utils.logger import get_logger
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.tools.nutrition.fndds import fndds_nutrition_search_tool
 
 # from langgraph_app.tools.vision.spatial import estimate_volume_from_two_images_tool
@@ -110,6 +111,7 @@ Analyze the user-provided image and identify all food items.
                 system_prompt += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error)}. Please correct your JSON output and ensure it strictly follows the schema."
 
             messages_to_send = [SystemMessage(content=system_prompt)] + messages
+            messages_to_send = inject_dynamic_context(messages_to_send)
             food_analysis_obj = await structured_llm.ainvoke(
                 messages_to_send, config={"callbacks": []}
             )
@@ -217,6 +219,7 @@ Database Results:
     for attempt in range(3):
         try:
             messages_for_portion = [SystemMessage(content=portion_prompt)] + messages
+            messages_for_portion = inject_dynamic_context(messages_for_portion)
             portion_obj = await portion_llm.ainvoke(
                 messages_for_portion, config={"callbacks": []}
             )
@@ -317,6 +320,7 @@ Summarize the user's meal and provide a nutritional assessment.
             + messages
             + [HumanMessage(content=summary_prompt)]
         )
+        messages_to_send_3 = inject_dynamic_context(messages_to_send_3)
         ai_message = await client.ainvoke(
             messages_to_send_3, config={"tags": ["final_node_output"]}
         )
