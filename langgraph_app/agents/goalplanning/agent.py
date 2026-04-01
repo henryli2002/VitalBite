@@ -53,6 +53,7 @@ Help the user define and achieve actionable dietary goals based on their history
     final_response = ""
     last_error: Exception | None = None
     ai_message = None
+    sleep_times = [0.2, 0.5]
 
     for attempt in range(3):
         try:
@@ -66,7 +67,7 @@ Help the user define and achieve actionable dietary goals based on their history
             last_error = e
             logger.warning(f"[goalplanning] Generation failed on attempt {attempt + 1}: {e}")
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(sleep_times[attempt])
 
     if not ai_message:
         fallback = (

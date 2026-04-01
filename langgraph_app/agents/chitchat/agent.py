@@ -51,6 +51,7 @@ Engage in general conversation, building rapport while naturally incorporating t
 
     last_error: Exception | None = None
     ai_message = None
+    sleep_times = [0.2, 0.5]
 
     for attempt in range(3):
         try:
@@ -64,7 +65,7 @@ Engage in general conversation, building rapport while naturally incorporating t
             last_error = e
             logger.warning(f"[chitchat] Generation failed on attempt {attempt + 1}: {e}")
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(sleep_times[attempt])
 
     if not ai_message:
         fallback = (

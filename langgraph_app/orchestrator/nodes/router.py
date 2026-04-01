@@ -122,6 +122,7 @@ CONFIDENCE: <0.00-1.00>
 REASONING: <brief but specific why this intent fits the user message>"""
 
     last_error: Exception | None = None
+    sleep_times = [0.2, 0.5]
     for attempt in range(3):
         try:
             messages_to_send = [SystemMessage(content=system_prompt)] + messages
@@ -216,7 +217,7 @@ REASONING: <brief but specific why this intent fits the user message>"""
                 f"[router] Intent routing failed on attempt {attempt + 1}: {e}"
             )
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(sleep_times[attempt])
 
     logger.error(
         f"[router] Intent routing ultimately failed after retries: {last_error}",

@@ -111,6 +111,7 @@ User Image (if any) might implicitly suggest a cuisine.
         structured_llm = client.with_structured_output(RecommendationQuery)
         query_params = None
         last_error_1 = None
+        sleep_times = [0.2, 0.5]
 
         for attempt in range(3):
             try:
@@ -132,7 +133,7 @@ You are WABI, an expert food recommendation assistant.
                     f"[food_recommendation] Extraction failed on attempt {attempt + 1}: {e}"
                 )
                 if attempt < 2:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(sleep_times[attempt])
 
         if query_params is None:
             raise last_error_1 or Exception(
@@ -236,7 +237,7 @@ Transform raw restaurant data into helpful, personalized suggestions.
                     f"[food_recommendation] Formatting failed on attempt {attempt + 1}: {e}"
                 )
                 if attempt < 2:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(sleep_times[attempt])
 
         if structured_response is None:
             raise last_error_2 or Exception(

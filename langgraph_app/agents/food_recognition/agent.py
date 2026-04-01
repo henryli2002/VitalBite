@@ -81,6 +81,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
     step_start = time.time()
     last_error = None
     structured_llm = client.with_structured_output(FoodAnalysis)
+    sleep_times = [0.2, 0.5]
 
     # --- Profile Setup ---
     user_profile = state.get("user_profile")
@@ -126,7 +127,7 @@ Analyze the user-provided image and identify all food items.
             last_error = e
             logger.error(f"Step 1 attempt {attempt + 1} failed: {e}")
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(sleep_times[attempt])
 
     step_time = time.time() - step_start
     step_metrics.append(
@@ -233,7 +234,7 @@ Database Results:
         except Exception as e:
             logger.error(f"Step 2.5 attempt {attempt + 1} failed: {e}")
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(sleep_times[attempt])
 
     step_time = time.time() - step_start
     step_metrics.append(
