@@ -64,7 +64,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - wabi_pgdata:/var/lib/postgresql/data
+      - ./data/pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wabi_user -d wabi_chat"]
       interval: 5s
@@ -80,7 +80,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - wabi_redisdata:/data
+      - ./data/redisdata:/data
     restart: unless-stopped
     networks:
       - wabi-network
@@ -88,7 +88,3 @@ services:
 networks:
   wabi-network:
     driver: bridge
-
-volumes:
-  wabi_pgdata:
-  wabi_redisdata:
