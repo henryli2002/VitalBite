@@ -36,13 +36,17 @@ active_connections: Dict[str, WebSocket] = {}
 # Static files (frontend)
 # ---------------------------------------------------------------------------
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "../frontend")
+
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 
 @app.get("/")
 async def serve_frontend():
     """Serve the main chat UI."""
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
 # ---------------------------------------------------------------------------

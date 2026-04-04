@@ -1,17 +1,17 @@
 FROM python:3.12-slim
 
-WORKDIR /app
+WORKDIR /app/backend
 
 # 1. Cache dependencies (Copy ONLY pyproject.toml)
-COPY pyproject.toml .
+COPY backend/pyproject.toml .
 # Create a dummy folder so pip install doesn't fail trying to build the package
-RUN mkdir -p /app/langgraph_app && touch /app/langgraph_app/__init__.py && \
+RUN mkdir -p /app/backend/langgraph_app && touch /app/backend/langgraph_app/__init__.py && \
     pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu . httpx aiosqlite pydantic "fastapi[all]"
 
 # 2. Copy the actual application code
-COPY langgraph_app/ /app/langgraph_app/
-COPY static/ /app/static/
-COPY models.py chat_manager.py db.py web_server.py /app/
+COPY backend/langgraph_app/ /app/backend/langgraph_app/
+COPY frontend/ /app/frontend/
+COPY backend/models.py backend/chat_manager.py backend/db.py backend/web_server.py /app/backend/
 
 # In production, data should be mounted as a volume
 RUN mkdir -p /app/data
