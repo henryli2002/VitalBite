@@ -8,6 +8,8 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+      - /app/.venv
+      - /app/__pycache__
     environment:
       - WABI_AI_URL=http://wabi-ai:8001/invoke
       - WABI_REDIS_URL=redis://wabi-redis:6379/0
@@ -38,6 +40,8 @@ services:
       - "8001:8001"
     volumes:
       - .:/app
+      - /app/.venv
+      - /app/__pycache__
     environment:
       - WABI_REDIS_URL=redis://wabi-redis:6379/0
     depends_on:
