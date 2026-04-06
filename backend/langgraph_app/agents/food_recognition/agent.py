@@ -82,7 +82,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
             content=[
                 {
                     "type": "text",
-                    "text": "Detect all distinct food items in this image. For each item, provide its name and its bounding box (ymin, xmin, ymax, xmax normalized between 0 and 1000).",
+                    "text": "Detect all distinct food portions or dishes in this image. Group items by 'plate' or 'serving'. For example, a burger and a side of fries are TWO separate items. A plate of salad (even if ingredients are visibly unmixed) is ONE single item. Do NOT detect individual ingredients within a single dish. For each detected dish/portion, provide its name and its bounding box (ymin, xmin, ymax, xmax normalized between 0 and 1000).",
                 },
                 {
                     "type": "image_url",

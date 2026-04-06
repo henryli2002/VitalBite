@@ -866,7 +866,7 @@ function buildPieChartSVG(slices, size = 140) {
             const textX = cx + (r * 0.7) * Math.cos(midAngle);
             const textY = cy + (r * 0.7) * Math.sin(midAngle);
             const pct = Math.round(fraction * 100);
-            labels += `<text x="${textX}" y="${textY}" class="nc-pie-label" text-anchor="middle" dominant-baseline="middle">${pct}%</text>`;
+            labels += `<text x="${textX}" y="${textY}" class="nc-pie-label" data-chart-label="${i}" text-anchor="middle" dominant-baseline="middle">${pct}%</text>`;
         }
 
         startAngle = endAngle;
@@ -881,13 +881,22 @@ function buildBarChartSVG(items, recommended) {
     const totalH = items.length * (barH + gap) + padding * 2;
     const totalW = labelW + barAreaW + 60;
 
-    // Find max value for scaling
-    const allVals = items.map(it => Math.max(it.actual, it.recommended));
-    const maxVal = Math.max(...allVals, 1);
+    // --- Robust Dual-scaling logic ---
+    const maxCalVal = items
+        .filter(it => it.label.includes('Cal'))
+        .reduce((max, it) => Math.max(max, it.actual, it.recommended), 0);
+
+    const maxGramVal = items
+        .filter(it => !it.label.includes('Cal'))
+        .reduce((max, it) => Math.max(max, it.actual, it.recommended), 0);
 
     let bars = '';
     items.forEach((it, i) => {
         const y = padding + i * (barH + gap);
+        
+        const isCalorie = it.label.includes('Cal');
+        const maxVal = Math.max(1, isCalorie ? maxCalVal : maxGramVal);
+
         const actualW = (it.actual / maxVal) * barAreaW;
         const recW = (it.recommended / maxVal) * barAreaW;
         const pct = it.recommended > 0 ? Math.round((it.actual / it.recommended) * 100) : 0;
@@ -914,22 +923,87 @@ function parseNutritionVal(str) {
 }
 
 /**
- * Build the full nutrition visualization (cards + pie + bar).
+ * Generate a concise, actionable summary based on the meal's nutritional data
+ * compared to the recommended values.
+ */
+function generateNutritionSummary(total, recommended) {
+    const THRESHOLDS = {
+        HIGH: 1.35,
+        SLIGHTLY_HIGH: 1.15,
+        LOW: 0.65,
+        SLIGHTLY_LOW: 0.85,
+    };
+
+    const pcts = {
+        cal: recommended.calories > 0 ? total.cal / recommended.calories : 0,
+        fat: recommended.fat > 0 ? total.fat / recommended.fat : 0,
+        carbs: recommended.carbs > 0 ? total.carbs / recommended.carbs : 0,
+        protein: recommended.protein > 0 ? total.protein / recommended.protein : 0,
+    };
+
+    let summaryParts = [];
+
+    let cal_eval;
+    if (pcts.cal > THRESHOLDS.HIGH) cal_eval = '能量摄入偏高';
+    else if (pcts.cal > THRESHOLDS.SLIGHTLY_HIGH) cal_eval = '能量摄入略高';
+    else if (pcts.cal < THRESHOLDS.LOW) cal_eval = '能量摄入不足';
+    else if (pcts.cal < THRESHOLDS.SLIGHTLY_LOW) cal_eval = '能量摄入略低';
+    else cal_eval = '能量摄入均衡';
+    summaryParts.push(cal_eval);
+
+    const macros = [
+        { name: '脂肪', pct: pcts.fat },
+        { name: '碳水', pct: pcts.carbs },
+        { name: '蛋白', pct: pcts.protein }
+    ];
+
+    macros.sort((a, b) => Math.abs(a.pct - 1) - Math.abs(b.pct - 1)).reverse();
+
+    for (let i = 0; i < 2; i++) {
+        const macro = macros[i];
+        let macro_eval = '';
+        if (Math.abs(macro.pct - 1) > (1 - THRESHOLDS.SLIGHTLY_LOW)) {
+            if (macro.pct > THRESHOLDS.HIGH) macro_eval = `${macro.name}摄入偏高`;
+            else if (macro.pct > THRESHOLDS.SLIGHTLY_HIGH) macro_eval = `${macro.name}摄入略高`;
+            else if (macro.pct < THRESHOLDS.LOW) macro_eval = `${macro.name}摄入不足`;
+            else if (macro.pct < THRESHOLDS.SLIGHTLY_LOW) macro_eval = `${macro.name}摄入略低`;
+            
+            if (macro_eval) summaryParts.push(macro_eval);
+        }
+    }
+    
+    if (summaryParts.length === 1 && summaryParts[0] === '能量摄入均衡') {
+        return '营养均衡，请继续保持！';
+    } else if (summaryParts.length > 3) {
+        summaryParts = summaryParts.slice(0, 3);
+    }
+    
+    if (summaryParts.length > 1 && summaryParts[0] === '能量摄入均衡') {
+        summaryParts.shift();
+    }
+    
+    return `本次用餐建议：${summaryParts.join('，')}。`;
+}
+
+/**
+ * Build the full nutrition visualization (cards + pie + bar). (cards + pie + bar).
  * Called from renderMarkdown when a nutrition table is detected.
  */
 function buildNutritionViz(lines) {
     const chartId = `nchart-${_chartIdCounter++}`;
     const clean = str => str.replace(/\*\*/g, '').trim();
 
-    // Parse food items and total
+    // Parse food items, ignoring any "Total" row from the LLM.
     const foods = [];
-    let total = null;
-
     for (let i = 2; i < lines.length; i++) {
         const cols = lines[i].split('|').slice(1, -1).map(c => c.trim());
         if (cols.length < 6) continue;
 
-        const isTotal = cols[0].includes('总计') || cols[0].includes('Total') || cols[0].includes('**');
+        const isTotalRow = cols[0].includes('总计') || cols[0].includes('Total') || cols[0].includes('**');
+        if (isTotalRow) {
+            continue; // Ignore the LLM's total row entirely.
+        }
+        
         const entry = {
             name:    clean(cols[0]),
             mass:    parseNutritionVal(clean(cols[1])),
@@ -943,24 +1017,34 @@ function buildNutritionViz(lines) {
             carbsStr:   clean(cols[4]),
             proteinStr: clean(cols[5]),
         };
-
-        if (isTotal) {
-            total = entry;
-        } else {
-            foods.push(entry);
-        }
+        foods.push(entry);
     }
 
-    if (!total && foods.length > 0) {
-        total = { name: 'Total', cal: 0, fat: 0, carbs: 0, protein: 0, mass: 0 };
-        foods.forEach(f => { total.cal += f.cal; total.fat += f.fat; total.carbs += f.carbs; total.protein += f.protein; total.mass += f.mass; });
+    // Always calculate the total manually from the parsed food items.
+    let total = null;
+    if (foods.length > 0) {
+        total = { 
+            name: '总计 (手动计算)', 
+            cal: 0, fat: 0, carbs: 0, protein: 0, mass: 0 
+        };
+        foods.forEach(f => { 
+            total.cal += f.cal; 
+            total.fat += f.fat; 
+            total.carbs += f.carbs; 
+            total.protein += f.protein; 
+            total.mass += f.mass; 
+        });
+        // Create formatted string versions for the total card, as they won't be parsed
+        total.calStr = `${Math.round(total.cal)} kcal`;
+        total.massStr = `${Math.round(total.mass)} g`;
+        total.fatStr = `${total.fat.toFixed(1)} g`;
+        total.carbsStr = `${total.carbs.toFixed(1)} g`;
+        total.proteinStr = `${total.protein.toFixed(1)} g`;
     }
 
-    if (!total) return '';
+    if (!total) return ''; // Exit if there are no food items to process.
 
-    // --- Pie chart: macro breakdown per food (stacked by macro) ---
-    // We show a donut-style pie for each macro type, but a simpler approach:
-    // One pie showing calorie contribution by food item
+    // --- Pie chart: calorie contribution by food item ---
     const calSlices = foods.map((f, i) => ({
         value: f.cal,
         color: CHART_COLORS[i % CHART_COLORS.length],
@@ -1031,10 +1115,13 @@ function buildNutritionViz(lines) {
     </div>`;
 
     // --- Assemble everything ---
+    const mealType = getCurrentMealType();
     const hasProfile = getCurrentProfileValues().weight_kg > 0;
     const guidelineNote = hasProfile
         ? '<span class="nc-guide-note">Based on your profile</span>'
         : '<span class="nc-guide-note">Based on average adult</span>';
+
+    const summaryHtml = generateNutritionSummary(total, rec);
 
     return `
     <div class="nutrition-viz" id="${chartId}">
@@ -1045,7 +1132,7 @@ function buildNutritionViz(lines) {
                 <div class="nc-food-btns">${foodBtnsHtml}</div>
             </div>
             <div class="nc-bar-section">
-                <div class="nc-section-title">vs Recommended Meal ${guidelineNote}</div>
+                <div class="nc-section-title">vs Recommended ${mealType} ${guidelineNote}</div>
                 ${barSVG}
                 <div class="nc-bar-legend">
                     <span class="nc-legend-item"><span class="nc-legend-bar"></span>Actual</span>
@@ -1054,9 +1141,9 @@ function buildNutritionViz(lines) {
             </div>
         </div>
         <div class="nutrition-cards-container">${cardsHtml}</div>
+        <div class="nc-summary">${summaryHtml}</div>
     </div>`;
 }
-
 function renderMarkdown(text) {
     if (!text) return '';
 
@@ -1220,11 +1307,14 @@ document.addEventListener('click', (e) => {
 
     const isActive = btn.classList.contains('active');
 
-    // Reset all buttons and slices in this chart
+    // Reset all buttons, slices, and labels in this chart
     container.querySelectorAll('.nc-food-btn').forEach(b => b.classList.remove('active'));
     container.querySelectorAll('.nc-pie-svg path').forEach(p => {
         p.style.opacity = '0.85';
         p.style.transform = '';
+    });
+    container.querySelectorAll('.nc-pie-svg .nc-pie-label').forEach(l => {
+        l.style.opacity = '0';
     });
     container.querySelectorAll('.nutrition-card[data-food-idx]').forEach(c => {
         c.classList.remove('highlighted');
@@ -1243,6 +1333,12 @@ document.addEventListener('click', (e) => {
                 p.style.opacity = '0.3';
             }
         });
+
+        // Show the corresponding label
+        const label = container.querySelector(`.nc-pie-label[data-chart-label="${idx}"]`);
+        if (label) {
+            label.style.opacity = '0.9';
+        }
 
         // Highlight corresponding card
         const card = container.querySelector(`.nutrition-card[data-food-idx="${idx}"]`);
