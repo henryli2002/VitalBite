@@ -1,44 +1,57 @@
 /* ===================================================================
-   WABI Chat — Modern Neutral Theme
-   Inspired by Linear / Notion / Arc aesthetics
+   WABI Chat — Solarized Light Theme
+   Warm, refined aesthetic inspired by Solarized Light palette
    =================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap');
 
 :root {
-    /* Surface */
-    --bg-app: #f7f8fa;
-    --bg-surface: #ffffff;
-    --bg-muted: #f0f2f5;
-    --bg-hover: #ebedf1;
-    --bg-active: #e4e7ec;
+    /* Solarized Light Surface */
+    --bg-app: #fdf6e3;
+    --bg-surface: #fefbf2;
+    --bg-muted: #eee8d5;
+    --bg-hover: #e8e1cc;
+    --bg-active: #ddd6c1;
 
-    /* Accent — indigo-violet */
-    --accent: #6366f1;
-    --accent-hover: #4f46e5;
-    --accent-subtle: rgba(99, 102, 241, 0.08);
-    --accent-ring: rgba(99, 102, 241, 0.22);
+    /* Accent — Solarized Cyan */
+    --accent: #2aa198;
+    --accent-hover: #1e8c84;
+    --accent-subtle: rgba(42, 161, 152, 0.08);
+    --accent-ring: rgba(42, 161, 152, 0.22);
+
+    /* Secondary accent — Solarized Blue */
+    --accent-blue: #268bd2;
+
+    /* Solarized palette */
+    --sol-yellow: #b58900;
+    --sol-orange: #cb4b16;
+    --sol-red: #dc322f;
+    --sol-magenta: #d33682;
+    --sol-violet: #6c71c4;
+    --sol-blue: #268bd2;
+    --sol-cyan: #2aa198;
+    --sol-green: #859900;
 
     /* Semantic */
-    --success: #22c55e;
-    --danger: #ef4444;
+    --success: #859900;
+    --danger: #dc322f;
 
-    /* Text */
-    --text-1: #111827;
-    --text-2: #4b5563;
-    --text-3: #9ca3af;
-    --text-inverse: #ffffff;
+    /* Text — Solarized base tones */
+    --text-1: #073642;
+    --text-2: #586e75;
+    --text-3: #93a1a1;
+    --text-inverse: #fdf6e3;
 
     /* Border */
-    --border: #e5e7eb;
-    --border-strong: #d1d5db;
+    --border: #eee8d5;
+    --border-strong: #d4cdb7;
 
-    /* Shadows */
+    /* Shadows — warm-tinted */
     --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.06), 0 2px 4px -2px rgba(0,0,0,0.04);
-    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.07), 0 4px 6px -4px rgba(0,0,0,0.04);
-    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.04);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.03);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.06), 0 4px 6px -4px rgba(0,0,0,0.03);
+    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.07), 0 8px 10px -6px rgba(0,0,0,0.03);
 
     /* Radii */
     --r-sm: 8px;
@@ -111,14 +124,15 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent-subtle);
+    background: rgba(181, 137, 0, 0.10);
     border-radius: var(--r-sm);
 }
 
 .logo h1 {
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 1px;
+    font-size: 20px;
+    font-weight: 400;
+    font-family: 'DM Serif Display', Georgia, serif;
+    letter-spacing: 0.5px;
     color: var(--text-1);
 }
 
@@ -189,7 +203,7 @@ html, body {
     width: 38px;
     height: 38px;
     border-radius: var(--r-full);
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--sol-cyan), var(--sol-blue));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -280,9 +294,11 @@ html, body {
 .welcome-icon { font-size: 56px; margin-bottom: 16px; }
 
 .welcome-content h2 {
-    font-size: 24px;
-    font-weight: 600;
+    font-size: 26px;
+    font-weight: 400;
+    font-family: 'DM Serif Display', Georgia, serif;
     margin-bottom: 8px;
+    color: var(--text-1);
 }
 
 .welcome-content > p {
@@ -313,8 +329,8 @@ html, body {
 }
 
 .feature-card:hover {
-    border-color: var(--accent);
-    background: var(--accent-subtle);
+    border-color: var(--sol-cyan);
+    background: rgba(42, 161, 152, 0.06);
     color: var(--text-1);
     transform: translateY(-1px);
     box-shadow: var(--shadow-sm);
@@ -342,7 +358,7 @@ html, body {
 }
 
 .chat-header-text h2 { font-size: 15px; font-weight: 600; }
-.chat-status { font-size: 11px; color: var(--success); }
+.chat-status { font-size: 11px; color: var(--sol-green); }
 
 .chat-view {
     flex-direction: column;
@@ -384,7 +400,7 @@ html, body {
 
 .message.user {
     align-self: flex-end;
-    background: var(--accent);
+    background: linear-gradient(135deg, #073642, #0a4a5c);
     color: var(--text-inverse);
     border-bottom-right-radius: 4px;
 }
@@ -410,117 +426,10 @@ html, body {
 .message.assistant .message-time { text-align: left; }
 
 /* Markdown in messages */
-/* Nutrition Cards & Tables */
-.nutrition-cards-container {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin: 12px 0;
-}
-
-.nutrition-card {
-    background: var(--bg-body);
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.nutrition-card.total-card {
-    background: rgba(43, 115, 237, 0.05);
-    border-color: rgba(43, 115, 237, 0.3);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-}
-
-.nc-header {
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--text-1);
-}
-
-.total-card .nc-header {
-    color: var(--accent);
-    font-size: 15px;
-}
-
-.nc-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.nc-btn {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    border: 1px solid transparent;
-}
-
-.nc-cal {
-    color: #e53e3e;
-    background: #fff5f5;
-    border-color: #fed7d7;
-}
-
-.nc-mass {
-    color: #dd6b20;
-    background: #fffaf0;
-    border-color: #feebc8;
-}
-
-.nc-macros {
-    color: #3182ce;
-    background: #ebf8ff;
-    border-color: #bee3f8;
-}
-
-[data-theme="dark"] .nc-cal { background: rgba(229, 62, 62, 0.15); border-color: rgba(229, 62, 62, 0.3); color: #fc8181; }
-[data-theme="dark"] .nc-mass { background: rgba(221, 107, 32, 0.15); border-color: rgba(221, 107, 32, 0.3); color: #fbd38d; }
-[data-theme="dark"] .nc-macros { background: rgba(49, 130, 206, 0.15); border-color: rgba(49, 130, 206, 0.3); color: #90cdf4; }
-
-.table-wrapper {
-    overflow-x: auto;
-    margin: 12px 0;
-    border-radius: var(--r-md);
-    border: 1px solid var(--border);
-    background: var(--bg-body);
-}
-
-.md-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    text-align: left;
-}
-
-.md-table th, .md-table td {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-}
-
-.md-table th {
-    background: rgba(0,0,0,0.02);
-    font-weight: 600;
-    color: var(--text-2);
-}
-
-[data-theme="dark"] .md-table th {
-    background: rgba(255,255,255,0.02);
-}
-
-.md-table tr:last-child td {
-    border-bottom: none;
-}
 
 .message h3, .message h4 { margin: 6px 0 4px; font-size: 14px; font-weight: 600; }
 .message.user h3, .message.user h4 { color: rgba(255,255,255,0.9); }
-.message.assistant h3, .message.assistant h4 { color: var(--accent); }
+.message.assistant h3, .message.assistant h4 { color: var(--sol-cyan); }
 
 .message ul, .message ol { padding-left: 16px; margin: 4px 0; }
 .message li { margin: 2px 0; }
@@ -546,23 +455,39 @@ html, body {
 .message.user pre { background: rgba(255,255,255,0.12); }
 .message pre code { background: none; padding: 0; }
 
-/* Nutrition Cards & Tables */
+/* ===================================================================
+   Nutrition Cards — refined Solarized style
+   =================================================================== */
+
 .nutrition-cards-container {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin: 12px 0;
+    margin: 14px 0;
 }
 
 .nutrition-card {
-    background: var(--bg-body);
+    background: var(--bg-app);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
-    padding: 12px 14px;
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
     gap: 10px;
-    transition: transform 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+.nutrition-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--sol-cyan);
+    border-radius: 0 2px 2px 0;
 }
 
 .nutrition-card:hover {
@@ -571,10 +496,15 @@ html, body {
 }
 
 .nutrition-card.total-card {
-    background: rgba(var(--accent-rgb), 0.04);
-    border-color: var(--accent);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    background: rgba(42, 161, 152, 0.05);
+    border-color: rgba(42, 161, 152, 0.3);
+    box-shadow: 0 2px 8px rgba(42, 161, 152, 0.08);
     margin-top: 4px;
+}
+
+.nutrition-card.total-card::before {
+    background: linear-gradient(to bottom, var(--sol-yellow), var(--sol-orange));
+    width: 4px;
 }
 
 .nc-header {
@@ -583,10 +513,12 @@ html, body {
     color: var(--text-1);
     display: flex;
     align-items: center;
+    gap: 6px;
+    letter-spacing: -0.01em;
 }
 
 .total-card .nc-header {
-    color: var(--accent);
+    color: var(--sol-cyan);
     font-size: 15px;
     font-weight: 700;
 }
@@ -600,70 +532,122 @@ html, body {
 .nc-btn {
     display: inline-flex;
     align-items: center;
+    gap: 3px;
     padding: 5px 10px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--r-sm);
     font-size: 12px;
     font-weight: 500;
     color: var(--text-2);
     white-space: nowrap;
+    transition: all var(--transition);
 }
 
 .total-card .nc-btn {
-    background: var(--bg-body);
-    border-color: rgba(0,0,0,0.08);
+    background: rgba(42, 161, 152, 0.06);
+    border-color: rgba(42, 161, 152, 0.2);
     color: var(--text-1);
     font-weight: 600;
 }
 
 .nc-cal {
-    color: #e53e3e;
-    background: #fff5f5;
-    border-color: #fed7d7;
+    color: var(--sol-red);
+    background: rgba(220, 50, 47, 0.06);
+    border-color: rgba(220, 50, 47, 0.18);
 }
 
 .nc-mass {
-    color: #dd6b20;
-    background: #fffaf0;
-    border-color: #feebc8;
+    color: var(--sol-orange);
+    background: rgba(203, 75, 22, 0.06);
+    border-color: rgba(203, 75, 22, 0.18);
 }
 
 .nc-macros {
-    color: #3182ce;
-    background: #ebf8ff;
-    border-color: #bee3f8;
+    color: var(--sol-blue);
+    background: rgba(38, 139, 210, 0.06);
+    border-color: rgba(38, 139, 210, 0.18);
 }
 
-[data-theme="dark"] .nc-cal { background: rgba(229, 62, 62, 0.15); border-color: rgba(229, 62, 62, 0.3); color: #fc8181; }
-[data-theme="dark"] .nc-mass { background: rgba(221, 107, 32, 0.15); border-color: rgba(221, 107, 32, 0.3); color: #fbd38d; }
-[data-theme="dark"] .nc-macros { background: rgba(49, 130, 206, 0.15); border-color: rgba(49, 130, 206, 0.3); color: #90cdf4; }
+/* ===================================================================
+   Generic Markdown Tables — Solarized
+   =================================================================== */
 
-/* Generic Markdown Tables */
 .table-wrapper {
     overflow-x: auto;
     margin: 12px 0;
     border-radius: var(--r-md);
     border: 1px solid var(--border);
-    background: var(--bg-body);
+    background: var(--bg-app);
 }
+
 .md-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
     text-align: left;
 }
+
 .md-table th, .md-table td {
     padding: 10px 14px;
     border-bottom: 1px solid var(--border);
 }
+
 .md-table th {
-    background: var(--bg-surface);
+    background: rgba(42, 161, 152, 0.04);
     font-weight: 600;
     color: var(--text-1);
+    letter-spacing: 0.01em;
 }
+
 .md-table tr:last-child td {
     border-bottom: none;
+}
+
+.md-table tr:hover td {
+    background: rgba(42, 161, 152, 0.03);
+}
+
+/* Nutrition card icon & label refinements */
+.nc-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-sm);
+    background: rgba(42, 161, 152, 0.08);
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.nc-icon-total {
+    background: linear-gradient(135deg, rgba(181, 137, 0, 0.12), rgba(203, 75, 22, 0.12));
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--sol-orange);
+    font-style: normal;
+}
+
+.nc-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.65;
+    font-weight: 600;
+    margin-right: 2px;
+}
+
+.nc-dot {
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.3;
+    vertical-align: middle;
+    margin: 0 3px;
 }
 
 /* Typing indicator */
@@ -694,7 +678,7 @@ html, body {
     max-width: 100%;
     border: 1px solid var(--border);
     border-radius: var(--r-full);
-    background: rgba(255,255,255,0.62);
+    background: rgba(253, 246, 227, 0.8);
     color: var(--text-2);
     padding: 6px 10px;
     cursor: pointer;
@@ -705,13 +689,13 @@ html, body {
 
 .thinking-chip:hover {
     transform: translateY(-1px);
-    background: rgba(255,255,255,0.88);
+    background: rgba(253, 246, 227, 0.95);
     box-shadow: var(--shadow-sm);
 }
 
 .thinking-icon {
     font-size: 13px;
-    color: var(--accent);
+    color: var(--sol-yellow);
 }
 
 .thinking-title {
@@ -772,9 +756,9 @@ html, body {
     color: var(--text-2);
     font-style: italic;
     line-height: 1.45;
-    background: rgba(17, 24, 39, 0.04);
+    background: rgba(7, 54, 66, 0.03);
     border-radius: var(--r-sm);
-    border-left: 2px solid var(--accent);
+    border-left: 2px solid var(--sol-yellow);
 }
 
 .thinking-logs li + li {
@@ -904,7 +888,7 @@ html, body {
     height: 40px;
     border-radius: var(--r-full);
     border: none;
-    background: var(--accent);
+    background: linear-gradient(135deg, #073642, #0a4a5c);
     color: var(--text-inverse);
     cursor: pointer;
     display: flex;
@@ -914,7 +898,7 @@ html, body {
     flex-shrink: 0;
 }
 
-.btn-send:hover { background: var(--accent-hover); transform: scale(1.05); }
+.btn-send:hover { background: linear-gradient(135deg, #0a4a5c, #073642); transform: scale(1.05); }
 .btn-send:active { transform: scale(0.95); }
 
 .btn-primary {
@@ -1064,7 +1048,8 @@ html, body {
     line-height: 1.5;
     margin-bottom: 20px;
     padding: 10px 12px;
-    background: var(--accent-subtle);
+    background: rgba(181, 137, 0, 0.06);
+    border: 1px solid rgba(181, 137, 0, 0.15);
     border-radius: var(--r-sm);
 }
 

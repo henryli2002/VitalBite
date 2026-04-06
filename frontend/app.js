@@ -699,6 +699,36 @@ function scrollToBottom() {
 // Simple Markdown Renderer
 // ---------------------------------------------------------------------------
 
+function getFoodIcon(name) {
+    const n = name.toLowerCase();
+    const icons = [
+        [/rice|饭|粥/, '\u{1F35A}'],
+        [/noodle|面|粉|pasta|spaghetti/, '\u{1F35C}'],
+        [/bread|toast|面包|馒头|包子/, '\u{1F35E}'],
+        [/burger|汉堡/, '\u{1F354}'],
+        [/pizza|披萨/, '\u{1F355}'],
+        [/chicken|鸡/, '\u{1F357}'],
+        [/meat|肉|beef|pork|牛|猪|羊|steak/, '\u{1F969}'],
+        [/fish|鱼|sushi|寿司|海鲜|shrimp|虾/, '\u{1F363}'],
+        [/egg|蛋|卵/, '\u{1F95A}'],
+        [/salad|沙拉|蔬菜|vegetable|菜/, '\u{1F957}'],
+        [/fruit|水果|apple|banana|苹果|香蕉|橙/, '\u{1F34E}'],
+        [/soup|汤/, '\u{1F372}'],
+        [/cake|蛋糕|dessert|甜点|cookie|饼/, '\u{1F370}'],
+        [/drink|饮|coffee|咖啡|tea|茶|juice|奶/, '\u{2615}'],
+        [/dumpling|饺|馄饨/, '\u{1F95F}'],
+        [/taco|burrito|卷/, '\u{1F32E}'],
+        [/fry|炸|薯条/, '\u{1F35F}'],
+        [/hot.?dog/, '\u{1F32D}'],
+        [/sandwich|三明治/, '\u{1F96A}'],
+        [/tofu|豆腐|豆/, '\u{1F962}'],
+    ];
+    for (const [re, icon] of icons) {
+        if (re.test(n)) return icon;
+    }
+    return '\u{1F37D}\uFE0F'; // plate with cutlery as default
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
 
@@ -720,14 +750,16 @@ function renderMarkdown(text) {
                     const isTotal = cols[0].includes('总计') || cols[0].includes('Total') || cols[0].includes('**');
                     const cardClass = isTotal ? 'nutrition-card total-card' : 'nutrition-card';
                     const clean = str => str.replace(/\*\*/g, '').trim();
-                    
+                    const foodName = clean(cols[0]);
+                    const headerIcon = isTotal ? '<span class="nc-icon nc-icon-total">&#931;</span>' : `<span class="nc-icon">${getFoodIcon(foodName)}</span>`;
+
                     cardsHtml += `
                     <div class="${cardClass}">
-                        <div class="nc-header">${clean(cols[0])}</div>
+                        <div class="nc-header">${headerIcon}${foodName}</div>
                         <div class="nc-stats">
-                            <span class="nc-btn nc-cal">🔥 ${clean(cols[2])}</span>
-                            <span class="nc-btn nc-mass">⚖️ ${clean(cols[1])}</span>
-                            <span class="nc-btn nc-macros">🥑 脂 ${clean(cols[3])} • 🍞 碳 ${clean(cols[4])} • 🥩 蛋 ${clean(cols[5])}</span>
+                            <span class="nc-btn nc-cal"><span class="nc-label">Cal</span> ${clean(cols[2])}</span>
+                            <span class="nc-btn nc-mass"><span class="nc-label">Wt</span> ${clean(cols[1])}</span>
+                            <span class="nc-btn nc-macros"><span class="nc-label">F</span> ${clean(cols[3])} <span class="nc-dot"></span> <span class="nc-label">C</span> ${clean(cols[4])} <span class="nc-dot"></span> <span class="nc-label">P</span> ${clean(cols[5])}</span>
                         </div>
                     </div>`;
                 }
