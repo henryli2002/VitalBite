@@ -758,20 +758,20 @@ const MACRO_COLORS = {
  * Determines the current meal type (Breakfast, Lunch, Dinner) based on
  * the current time in GMT+8 timezone.
  */
-function getCurrentMealType() {
-    // Get current time in UTC, then shift to GMT+8
+// 新增 isZh 参数
+function getCurrentMealType(isZh = true) {
     const now = new Date();
     const utcHours = now.getUTCHours();
     const gmt8Hours = (utcHours + 8) % 24;
 
     if (gmt8Hours >= 5 && gmt8Hours < 11) {
-        return '早餐';
+        return isZh ? '早餐' : 'Breakfast';
     } else if (gmt8Hours >= 11 && gmt8Hours < 17) {
-        return '午餐';
+        return isZh ? '午餐' : 'Lunch';
     } else if (gmt8Hours >= 17 && gmt8Hours < 22) {
-        return '晚餐';
+        return isZh ? '晚餐' : 'Dinner';
     } else {
-        return '正餐'; // Default fallback
+        return isZh ? '正餐' : 'Meal';
     }
 }
 
@@ -931,14 +931,9 @@ function parseNutritionVal(str) {
  * Generate a concise, actionable summary based on the meal's nutritional data
  * compared to the recommended values.
  */
-function generateNutritionSummary(total, recommended) {
-    const THRESHOLDS = {
-        HIGH: 1.35,
-        SLIGHTLY_HIGH: 1.15,
-        LOW: 0.65,
-        SLIGHTLY_LOW: 0.85,
-    };
-
+// 新增 isZh 参数
+function generateNutritionSummary(total, recommended, isZh = true) {
+    const THRESHOLDS = { HIGH: 1.35, SLIGHTLY_HIGH: 1.15, LOW: 0.65, SLIGHTLY_LOW: 0.85 };
     const pcts = {
         cal: recommended.calories > 0 ? total.cal / recommended.calories : 0,
         fat: recommended.fat > 0 ? total.fat / recommended.fat : 0,
@@ -947,47 +942,50 @@ function generateNutritionSummary(total, recommended) {
     };
 
     let summaryParts = [];
-
     let cal_eval;
-    if (pcts.cal > THRESHOLDS.HIGH) cal_eval = '能量摄入偏高';
-    else if (pcts.cal > THRESHOLDS.SLIGHTLY_HIGH) cal_eval = '能量摄入略高';
-    else if (pcts.cal < THRESHOLDS.LOW) cal_eval = '能量摄入不足';
-    else if (pcts.cal < THRESHOLDS.SLIGHTLY_LOW) cal_eval = '能量摄入略低';
-    else cal_eval = '能量摄入均衡';
+    
+    // 动态判断能量
+    if (pcts.cal > THRESHOLDS.HIGH) cal_eval = isZh ? '能量摄入偏高' : 'Calorie intake is high';
+    else if (pcts.cal > THRESHOLDS.SLIGHTLY_HIGH) cal_eval = isZh ? '能量摄入略高' : 'Calorie intake is slightly high';
+    else if (pcts.cal < THRESHOLDS.LOW) cal_eval = isZh ? '能量摄入不足' : 'Calorie intake is too low';
+    else if (pcts.cal < THRESHOLDS.SLIGHTLY_LOW) cal_eval = isZh ? '能量摄入略低' : 'Calorie intake is slightly low';
+    else cal_eval = isZh ? '能量摄入均衡' : 'Calorie intake is balanced';
     summaryParts.push(cal_eval);
 
+    // 动态判断三大营养素
     const macros = [
-        { name: '脂肪', pct: pcts.fat },
-        { name: '碳水', pct: pcts.carbs },
-        { name: '蛋白', pct: pcts.protein }
+        { name: isZh ? '脂肪' : 'Fat', pct: pcts.fat },
+        { name: isZh ? '碳水' : 'Carbs', pct: pcts.carbs },
+        { name: isZh ? '蛋白' : 'Protein', pct: pcts.protein }
     ];
-
     macros.sort((a, b) => Math.abs(a.pct - 1) - Math.abs(b.pct - 1)).reverse();
 
     for (let i = 0; i < 2; i++) {
         const macro = macros[i];
         let macro_eval = '';
         if (Math.abs(macro.pct - 1) > (1 - THRESHOLDS.SLIGHTLY_LOW)) {
-            if (macro.pct > THRESHOLDS.HIGH) macro_eval = `${macro.name}摄入偏高`;
-            else if (macro.pct > THRESHOLDS.SLIGHTLY_HIGH) macro_eval = `${macro.name}摄入略高`;
-            else if (macro.pct < THRESHOLDS.LOW) macro_eval = `${macro.name}摄入不足`;
-            else if (macro.pct < THRESHOLDS.SLIGHTLY_LOW) macro_eval = `${macro.name}摄入略低`;
+            if (macro.pct > THRESHOLDS.HIGH) macro_eval = isZh ? `${macro.name}摄入偏高` : `${macro.name} is high`;
+            else if (macro.pct > THRESHOLDS.SLIGHTLY_HIGH) macro_eval = isZh ? `${macro.name}摄入略高` : `${macro.name} is slightly high`;
+            else if (macro.pct < THRESHOLDS.LOW) macro_eval = isZh ? `${macro.name}摄入不足` : `${macro.name} is too low`;
+            else if (macro.pct < THRESHOLDS.SLIGHTLY_LOW) macro_eval = isZh ? `${macro.name}摄入略低` : `${macro.name} is slightly low`;
             
             if (macro_eval) summaryParts.push(macro_eval);
         }
     }
     
-    if (summaryParts.length === 1 && summaryParts[0] === '能量摄入均衡') {
-        return '营养均衡，请继续保持！';
+    // 动态拼接结论
+    const balancedStr = isZh ? '能量摄入均衡' : 'Calorie intake is balanced';
+    if (summaryParts.length === 1 && summaryParts[0] === balancedStr) {
+        return isZh ? '营养均衡，请继续保持！' : 'Nutrition is balanced, keep it up!';
     } else if (summaryParts.length > 3) {
         summaryParts = summaryParts.slice(0, 3);
     }
     
-    if (summaryParts.length > 1 && summaryParts[0] === '能量摄入均衡') {
+    if (summaryParts.length > 1 && summaryParts[0] === balancedStr) {
         summaryParts.shift();
     }
     
-    return `本次用餐建议：${summaryParts.join('，')}。`;
+    return isZh ? `本次用餐建议：${summaryParts.join('，')}。` : `Meal suggestion: ${summaryParts.join(', ')}.`;
 }
 
 /**
@@ -995,8 +993,12 @@ function generateNutritionSummary(total, recommended) {
  * Called from renderMarkdown when a nutrition table is detected.
  */
 function buildNutritionViz(lines) {
+    // Generate a unique chart ID for this nutrition visualization instance
     const chartId = `nchart-${_chartIdCounter++}`;
+    // Helper to clean markdown artifacts like "**" and trim whitespace
     const clean = str => str.replace(/\*\*/g, '').trim();
+    // Detect if the content is in Chinese by checking for Chinese characters in the table
+    const isZh = /[\u4e00-\u9fa5]/.test(lines.join(''));  
 
     // Parse food items, ignoring any "Total" row from the LLM.
     const foods = [];
@@ -1029,7 +1031,7 @@ function buildNutritionViz(lines) {
     let total = null;
     if (foods.length > 0) {
         total = { 
-            name: '总计', 
+            name: isZh ? '总计' : 'Total',
             cal: 0, fat: 0, carbs: 0, protein: 0, mass: 0 
         };
         foods.forEach(f => { 
@@ -1120,13 +1122,13 @@ function buildNutritionViz(lines) {
     </div>`;
 
     // --- Assemble everything ---
-    const mealType = getCurrentMealType();
+    const mealType = getCurrentMealType(isZh);
     const hasProfile = getCurrentProfileValues().weight_kg > 0;
     const guidelineNote = hasProfile
         ? '<span class="nc-guide-note">Based on your profile</span>'
         : '<span class="nc-guide-note">Based on average adult</span>';
 
-    const summaryHtml = generateNutritionSummary(total, rec);
+    const summaryHtml = generateNutritionSummary(total, rec, isZh); // Generate the summary with the appropriate language setting
 
     return `
     <div class="nutrition-viz" id="${chartId}">
