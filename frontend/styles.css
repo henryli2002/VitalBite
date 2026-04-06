@@ -400,8 +400,8 @@ html, body {
 
 .message.user {
     align-self: flex-end;
-    background: linear-gradient(135deg, #073642, #0a4a5c);
-    color: var(--text-inverse);
+    background: linear-gradient(135deg, #d3ece9, #c4e3df);
+    color: #073642;
     border-bottom-right-radius: 4px;
 }
 
@@ -422,13 +422,13 @@ html, body {
     color: var(--text-3);
 }
 
-.message.user .message-time { color: rgba(255,255,255,0.6); }
+.message.user .message-time { color: rgba(7,54,66,0.45); }
 .message.assistant .message-time { text-align: left; }
 
 /* Markdown in messages */
 
 .message h3, .message h4 { margin: 6px 0 4px; font-size: 14px; font-weight: 600; }
-.message.user h3, .message.user h4 { color: rgba(255,255,255,0.9); }
+.message.user h3, .message.user h4 { color: #073642; }
 .message.assistant h3, .message.assistant h4 { color: var(--sol-cyan); }
 
 .message ul, .message ol { padding-left: 16px; margin: 4px 0; }
@@ -442,7 +442,7 @@ html, body {
     font-size: 13px;
 }
 
-.message.user code { background: rgba(255,255,255,0.2); }
+.message.user code { background: rgba(7,54,66,0.08); }
 
 .message pre {
     background: rgba(0,0,0,0.04);
@@ -452,7 +452,7 @@ html, body {
     margin: 4px 0;
 }
 
-.message.user pre { background: rgba(255,255,255,0.12); }
+.message.user pre { background: rgba(7,54,66,0.06); }
 .message pre code { background: none; padding: 0; }
 
 /* ===================================================================
@@ -608,7 +608,169 @@ html, body {
     background: rgba(42, 161, 152, 0.03);
 }
 
-/* Nutrition card icon & label refinements */
+/* ===================================================================
+   Nutrition Visualization — Charts + Cards
+   =================================================================== */
+
+.nutrition-viz {
+    margin: 14px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* Charts row: pie + bar side by side */
+.nc-charts-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.nc-pie-section,
+.nc-bar-section {
+    flex: 1;
+    min-width: 180px;
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.nc-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2);
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.nc-guide-note {
+    font-size: 10px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-3);
+    padding: 1px 6px;
+    background: var(--bg-muted);
+    border-radius: 4px;
+}
+
+/* Pie chart */
+.nc-pie-svg {
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.06));
+}
+
+.nc-pie-svg path {
+    cursor: pointer;
+}
+
+/* Food buttons */
+.nc-food-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: center;
+    width: 100%;
+}
+
+.nc-food-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-full);
+    background: var(--bg-surface);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-2);
+    transition: all var(--transition);
+    white-space: nowrap;
+}
+
+.nc-food-btn:hover {
+    border-color: var(--food-color, var(--sol-cyan));
+    background: rgba(42, 161, 152, 0.04);
+}
+
+.nc-food-btn.active {
+    border-color: var(--food-color, var(--sol-cyan));
+    background: color-mix(in srgb, var(--food-color, var(--sol-cyan)) 8%, transparent);
+    color: var(--text-1);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--food-color, var(--sol-cyan)) 15%, transparent);
+}
+
+.nc-food-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.nc-food-icon {
+    font-size: 13px;
+}
+
+.nc-food-name {
+    font-weight: 500;
+}
+
+.nc-food-cal {
+    font-size: 10px;
+    color: var(--text-3);
+    margin-left: 2px;
+}
+
+/* Bar chart */
+.nc-bar-section {
+    min-width: 220px;
+}
+
+.nc-bar-svg text {
+    font-family: 'Inter', sans-serif;
+}
+
+.nc-bar-legend {
+    display: flex;
+    gap: 12px;
+    font-size: 10px;
+    color: var(--text-3);
+    align-self: flex-start;
+}
+
+.nc-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nc-legend-bar {
+    width: 14px;
+    height: 6px;
+    border-radius: 2px;
+    background: var(--sol-cyan);
+    opacity: 0.75;
+}
+
+.nc-legend-dash {
+    width: 14px;
+    height: 0;
+    border-top: 1.5px dashed var(--text-3);
+    opacity: 0.6;
+}
+
+/* Card refinements */
 .nc-icon {
     display: inline-flex;
     align-items: center;
@@ -648,6 +810,38 @@ html, body {
     opacity: 0.3;
     vertical-align: middle;
     margin: 0 3px;
+}
+
+/* Macro proportion bar (mini stacked bar in each card) */
+.nc-macro-bar {
+    display: flex;
+    height: 5px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--bg-muted);
+}
+
+.nc-macro-seg {
+    height: 100%;
+    min-width: 2px;
+    opacity: 0.75;
+    transition: opacity 0.2s;
+}
+
+/* Card highlight state when food button is active */
+.nutrition-card.highlighted {
+    border-color: var(--card-accent, var(--sol-cyan));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--card-accent, var(--sol-cyan)) 15%, transparent),
+                var(--shadow-sm);
+}
+
+.nutrition-card.highlighted::before {
+    background: var(--card-accent, var(--sol-cyan));
+}
+
+/* Widen assistant message when it contains charts */
+.message.assistant:has(.nutrition-viz) {
+    max-width: 88%;
 }
 
 /* Typing indicator */
@@ -1131,4 +1325,9 @@ html, body {
     .messages-scroll { padding: 16px; }
     .input-bar { padding: 10px 12px 16px; }
     .profile-drawer { width: 100%; }
+
+    /* Charts responsive */
+    .nc-charts-row { flex-direction: column; }
+    .nc-pie-section, .nc-bar-section { min-width: unset; width: 100%; }
+    .message { max-width: 90%; }
 }
