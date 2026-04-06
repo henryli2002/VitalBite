@@ -755,6 +755,27 @@ const MACRO_COLORS = {
 };
 
 /**
+ * Determines the current meal type (Breakfast, Lunch, Dinner) based on
+ * the current time in GMT+8 timezone.
+ */
+function getCurrentMealType() {
+    // Get current time in UTC, then shift to GMT+8
+    const now = new Date();
+    const utcHours = now.getUTCHours();
+    const gmt8Hours = (utcHours + 8) % 24;
+
+    if (gmt8Hours >= 5 && gmt8Hours < 11) {
+        return '早餐';
+    } else if (gmt8Hours >= 11 && gmt8Hours < 17) {
+        return '午餐';
+    } else if (gmt8Hours >= 17 && gmt8Hours < 22) {
+        return '晚餐';
+    } else {
+        return '正餐'; // Default fallback
+    }
+}
+
+/**
  * Get recommended per-meal nutrition based on user profile or defaults.
  * Uses Mifflin-St Jeor if profile has weight/height/age/gender.
  */
@@ -812,6 +833,7 @@ function getCurrentProfileValues() {
         height_cm: parseFloat(dom.profInputs.height_cm?.value) || 0,
         weight_kg: parseFloat(dom.profInputs.weight_kg?.value) || 0,
         gender:    dom.profInputs.gender?.value || '',
+        fitness_goals: dom.profInputs.fitness_goals?.value || '',
     };
 }
 
@@ -822,6 +844,7 @@ function buildPieChartSVG(slices, size = 140) {
     if (total === 0) return '';
 
     let paths = '';
+    let labels = '';
     let startAngle = -Math.PI / 2;
 
     slices.forEach((sl, i) => {
@@ -836,10 +859,20 @@ function buildPieChartSVG(slices, size = 140) {
         const y2 = cy + r * Math.sin(endAngle);
 
         paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc},1 ${x2},${y2} Z" fill="${sl.color}" data-chart-slice="${i}" opacity="0.85" style="transition:opacity 0.2s,transform 0.2s;transform-origin:${cx}px ${cy}px"/>`;
+
+        // Add percentage label if the slice is large enough
+        if (fraction > 0.05) {
+            const midAngle = startAngle + angle / 2;
+            const textX = cx + (r * 0.7) * Math.cos(midAngle);
+            const textY = cy + (r * 0.7) * Math.sin(midAngle);
+            const pct = Math.round(fraction * 100);
+            labels += `<text x="${textX}" y="${textY}" class="nc-pie-label" text-anchor="middle" dominant-baseline="middle">${pct}%</text>`;
+        }
+
         startAngle = endAngle;
     });
 
-    return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="nc-pie-svg">${paths}</svg>`;
+    return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="nc-pie-svg">${paths}${labels}</svg>`;
 }
 
 /** Build an SVG horizontal bar chart comparing actual vs recommended. */

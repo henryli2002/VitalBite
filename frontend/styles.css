@@ -674,6 +674,19 @@ html, body {
     cursor: pointer;
 }
 
+.nc-pie-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: #fff;
+    paint-order: stroke;
+    stroke: rgba(0,0,0,0.3);
+    stroke-width: 2px;
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+    pointer-events: none;
+}
+
+
 /* Food buttons */
 .nc-food-btns {
     display: flex;
@@ -1320,6 +1333,18 @@ html, body {
         z-index: 20;
         transition: transform var(--transition);
     }
+    .sidebar.hidden { transform: translateX(-100%); }
+    .btn-back { display: flex !important; }
+    .messages-scroll { padding: 16px; }
+    .input-bar { padding: 10px 12px 16px; }
+    .profile-drawer { width: 100%; }
+
+    /* Charts responsive */
+    .nc-charts-row { flex-direction: column; }
+    .nc-pie-section, .nc-bar-section { min-width: unset; width: 100%; }
+    .message { max-width: 90%; }
+}
+
     .sidebar.hidden { transform: translateX(-100%); }
     .btn-back { display: flex !important; }
     .messages-scroll { padding: 16px; }

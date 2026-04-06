@@ -249,8 +249,8 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
 [CONSTRAINTS]
 1. IDENTIFY: Greet the user and identify the foods detected (e.g., "I see a burger and fries...").
 2. STRICT FORMATTING: You MUST use a Markdown table to display the nutrition data. Do not write the data in paragraphs. Use the exact table format shown below.
-3. ITEMIZATION: Provide the data for each individual item, followed by the TOTAL row.
-4. ACCURACY: Report the exact numbers from the data. Do not recalculate.
+3. ITEMIZATION: Provide the data for each individual item. DO NOT include a "Total" or "Summary" row in the table. The frontend will calculate the total automatically.
+4. ACCURACY: Report the exact numbers from the data. Do not recalculate or modify them.
 5. PERSONALIZATION: Explicitly evaluate the meal against the 'User Profile'. Call out allergies or goals.
 6. LANGUAGE: The response MUST be entirely in '{lang}'.
 
@@ -259,7 +259,6 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | [Item 1] | [mass] g | [cal] kcal | [fat] g | [carbs] g | [protein] g |
 | [Item 2] | [mass] g | [cal] kcal | [fat] g | [carbs] g | [protein] g |
-| **总计 (Total)** | **[mass] g** | **[cal] kcal** | **[fat] g** | **[carbs] g** | **[protein] g** |
 
 (Note: translate the table headers to '{lang}' if it is not Chinese)"""
 
