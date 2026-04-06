@@ -6,7 +6,11 @@ WORKDIR /app/backend
 COPY backend/pyproject.toml .
 # Create a dummy folder so pip install doesn't fail trying to build the package
 RUN mkdir -p /app/backend/langgraph_app && touch /app/backend/langgraph_app/__init__.py && \
-    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu . httpx aiosqlite pydantic "fastapi[all]"
+    pip install --default-timeout=2000 \
+    --retries 10 \
+    --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    . httpx aiosqlite pydantic "fastapi[all]"
 
 # 2. Copy the actual application code
 COPY backend/langgraph_app/ /app/backend/langgraph_app/

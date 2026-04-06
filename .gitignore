@@ -76,3 +76,7 @@ fndds_*
 # 日志
 *.log
 logs/
+
+# 数据
+*.pkl
+*.pt
