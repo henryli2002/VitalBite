@@ -843,6 +843,11 @@ function buildPieChartSVG(slices, size = 140) {
     const total = slices.reduce((s, sl) => s + sl.value, 0);
     if (total === 0) return '';
 
+    // Handle single slice edge case - render as full circle
+    if (slices.length === 1) {
+        const sl = slices[0];
+        return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="nc-pie-svg"><circle cx="${cx}" cy="${cy}" r="${r}" fill="${sl.color}" opacity="0.85" data-chart-slice="0" style="transition:opacity 0.2s,transform 0.2s;transform-origin:${cx}px ${cy}px;"/><text x="${cx}" y="${cy}" class="nc-pie-label" data-chart-label="0" text-anchor="middle" dominant-baseline="middle">100%</text></svg>`;
+    }
     let paths = '';
     let labels = '';
     let startAngle = -Math.PI / 2;
@@ -1296,6 +1301,7 @@ dom.searchInput.addEventListener('input', (e) => {
 });
 
 // Food button interaction (event delegation on message area)
+// 食物按钮交互 + 饼图切片反向交互（双向联动）
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('.nc-food-btn');
     if (!btn) return;
@@ -1307,9 +1313,9 @@ document.addEventListener('click', (e) => {
 
     const isActive = btn.classList.contains('active');
 
-    // Reset all buttons, slices, and labels in this chart
+    // 重置所有状态
     container.querySelectorAll('.nc-food-btn').forEach(b => b.classList.remove('active'));
-    container.querySelectorAll('.nc-pie-svg path').forEach(p => {
+    container.querySelectorAll('.nc-pie-svg path, .nc-pie-svg circle').forEach(p => {
         p.style.opacity = '0.85';
         p.style.transform = '';
     });
@@ -1321,29 +1327,37 @@ document.addEventListener('click', (e) => {
     });
 
     if (!isActive) {
-        // Highlight this food
+        // 高亮当前按钮
         btn.classList.add('active');
 
-        // Dim other slices, pop this one
-        container.querySelectorAll('.nc-pie-svg path').forEach(p => {
+        // 高亮对应切片（支持 path + circle 单切片）
+        container.querySelectorAll('.nc-pie-svg path, .nc-pie-svg circle').forEach(p => {
             if (p.dataset.chartSlice === idx) {
                 p.style.opacity = '1';
-                p.style.transform = 'scale(1.06)';
+                p.style.transform = 'scale(1.06)'; // 放大动画
             } else {
                 p.style.opacity = '0.3';
             }
         });
 
-        // Show the corresponding label
+        // 显示百分比标签
         const label = container.querySelector(`.nc-pie-label[data-chart-label="${idx}"]`);
-        if (label) {
-            label.style.opacity = '0.9';
-        }
+        if (label) label.style.opacity = '0.9';
 
-        // Highlight corresponding card
+        // 高亮营养卡片
         const card = container.querySelector(`.nutrition-card[data-food-idx="${idx}"]`);
         if (card) card.classList.add('highlighted');
     }
+});
+
+// 🔥 新增：饼图切片点击 → 自动选中对应按钮（反向联动）
+document.addEventListener('click', (e) => {
+    const slice = e.target.closest('.nc-pie-svg path, .nc-pie-svg circle');
+    if (!slice) return;
+    const chart = slice.closest('.nutrition-viz');
+    const index = slice.dataset.chartSlice;
+    const targetBtn = chart?.querySelector(`.nc-food-btn[data-food-idx="${index}"]`);
+    targetBtn?.click();
 });
 
 // ---------------------------------------------------------------------------
