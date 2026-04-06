@@ -704,6 +704,55 @@ function renderMarkdown(text) {
 
     let html = escapeHtml(text);
 
+    // Nutrition Table -> Cards (Must do this before line break replacements)
+    html = html.replace(/((?:\|.*\|\n?)+)/g, (match) => {
+        const lines = match.trim().split('\n');
+        if (lines.length < 3) return match;
+
+        const header = lines[0];
+        const isNutrition = header.includes('热量') || header.includes('Calories') || header.includes('重量');
+
+        if (isNutrition) {
+            let cardsHtml = '<div class="nutrition-cards-container">';
+            for (let i = 2; i < lines.length; i++) {
+                const cols = lines[i].split('|').slice(1, -1).map(c => c.trim());
+                if (cols.length >= 6) {
+                    const isTotal = cols[0].includes('总计') || cols[0].includes('Total') || cols[0].includes('**');
+                    const cardClass = isTotal ? 'nutrition-card total-card' : 'nutrition-card';
+                    const clean = str => str.replace(/\*\*/g, '').trim();
+                    
+                    cardsHtml += `
+                    <div class="${cardClass}">
+                        <div class="nc-header">${clean(cols[0])}</div>
+                        <div class="nc-stats">
+                            <span class="nc-btn nc-cal">🔥 ${clean(cols[2])}</span>
+                            <span class="nc-btn nc-mass">⚖️ ${clean(cols[1])}</span>
+                            <span class="nc-btn nc-macros">🥑 脂 ${clean(cols[3])} • 🍞 碳 ${clean(cols[4])} • 🥩 蛋 ${clean(cols[5])}</span>
+                        </div>
+                    </div>`;
+                }
+            }
+            cardsHtml += '</div>';
+            return cardsHtml;
+        } else {
+            // Generic table
+            let tableHtml = '<div class="table-wrapper"><table class="md-table">';
+            lines.forEach((line, index) => {
+                if (index === 1) return; // skip separator
+                const cols = line.split('|').slice(1, -1).map(c => c.trim());
+                tableHtml += '<tr>';
+                cols.forEach(col => {
+                    const clean = col.replace(/\*\*/g, '');
+                    if (index === 0) tableHtml += `<th>${clean}</th>`;
+                    else tableHtml += `<td>${clean}</td>`;
+                });
+                tableHtml += '</tr>';
+            });
+            tableHtml += '</table></div>';
+            return tableHtml;
+        }
+    });
+
     // Images
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 300px; max-height: 300px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin-top: 8px;"/>');
 
@@ -729,11 +778,10 @@ function renderMarkdown(text) {
     // Clean up nested <ul> tags
     html = html.replace(/<\/ul>\s*<ul>/g, '');
 
-    // Line breaks
-    html = html.replace(/\n\n/g, '<br/><br/>');
-    html = html.replace(/\n/g, '<br/>');
-
-    return html;
+    // Line breaks (ignore line breaks inside our newly generated div blocks)
+    // Actually, simple replace will convert \n to <br/>. We need to be careful with the generated HTML.
+    // So let's temporarily swap out our divs.
+    return html.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>').replace(/<br\/>\s*(<div class="nutrition|<div class="table-wrapper|<\/div>|<table|<\/table>|<tr|<\/tr>|<td|<\/td>|<th|<\/th>)/g, '$1');
 }
 
 // ---------------------------------------------------------------------------
