@@ -1029,7 +1029,7 @@ function buildNutritionViz(lines) {
     let total = null;
     if (foods.length > 0) {
         total = { 
-            name: '总计 (手动计算)', 
+            name: '总计', 
             cal: 0, fat: 0, carbs: 0, protein: 0, mass: 0 
         };
         foods.forEach(f => { 
