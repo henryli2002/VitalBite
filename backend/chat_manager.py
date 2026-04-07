@@ -262,7 +262,7 @@ class ChatManager:
                     if isinstance(data, dict) and data.get("status") == "error":
                         error_msg = data.get("message", "Unknown Backend Crash")
                         logger.error(f"Intercepted backend crash for user {user_id}: {error_msg}")
-                        ai_text = f"🔴 fatal backend error: {error_msg}"
+                        ai_text = f"🔴 fatal error: {error_msg}"
                         phase_1_done = True
                         break
                     
@@ -312,7 +312,7 @@ class ChatManager:
                         if isinstance(data, dict) and data.get("status") == "error":
                             error_msg = data.get("message", "Unknown Backend Crash")
                             logger.error(f"Intercepted backend crash (Phase 2) for user {user_id}: {error_msg}")
-                            ai_text = f"🔴 fatal backend error (Goalplanning): {error_msg}"
+                            ai_text = f"🔴 fatal error (Goalplanning): {error_msg}"
                             break
                         # Parse nested message format (same as Phase 1)
                         p2_messages = data.get("messages", [])
