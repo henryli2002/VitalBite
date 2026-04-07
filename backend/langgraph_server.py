@@ -57,26 +57,6 @@ def build_thinking_partial(
             }
         return None
 
-    if node_name == "recognition":
-        recog = node_output.get("recognition_result") or {}
-        # Corrected: Switch from "final_analysis" to "itemized_analysis" to match agent output
-        itemized_analysis = recog.get("itemized_analysis") or []
-        if not isinstance(itemized_analysis, list) or not itemized_analysis:
-            return None
-        # Corrected: Switch from "identified_name" to "name" to match agent output
-        foods = [
-            str(item.get("name", ""))
-            for item in itemized_analysis[:3]
-            if isinstance(item, dict)
-        ]
-        food_part = "、".join([f for f in foods if f]) or "食物"
-        return {
-            "status": "partial",
-            "node": "recognition",
-            # Corrected: Translate to Chinese and remove non-existent "portions"
-            "analysis": {"reasoning": f"正在识别：{food_part}"},
-        }
-
     if node_name == "recommendation":
         rec = node_output.get("recommendation_result") or {}
         restaurants = rec.get("restaurants") or []

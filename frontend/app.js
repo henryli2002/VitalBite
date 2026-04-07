@@ -529,47 +529,61 @@ function showTypingIndicator() {
 
 function updateThinkingIndicator(data) {
     const nodeName = data.content || data.node || '';
-
+    const thinkingText = extractThinkingText(data, nodeName);
+    
     const pendingMessage = ensurePendingAssistantMessage();
     let container = pendingMessage.querySelector('.thinking-container');
-    const thinkingText = extractThinkingText(data, nodeName);
 
     if (!container) {
-        container = document.createElement('div');
-        container.className = 'thinking-container';
-        container.innerHTML = `
-            <button type="button" class="thinking-chip" aria-expanded="false">
-                <span class="thinking-icon">✨</span>
-                <span class="thinking-title">Thinking</span>
-                <span class="thinking-summary"></span>
-                <span class="thinking-toggle">⌄</span>
-            </button>
-            <div class="thinking-content">
-                <ul class="thinking-logs"></ul>
-            </div>
-        `;
-        pendingMessage.querySelector('.message-content').prepend(container);
-
-        const chip = container.querySelector('.thinking-chip');
-        const content = container.querySelector('.thinking-content');
-        chip.addEventListener('click', () => {
-            const expanded = container.classList.toggle('expanded');
-            chip.setAttribute('aria-expanded', String(expanded));
-            content.style.maxHeight = expanded ? `${content.scrollHeight}px` : '0px';
-        });
+        container = createThinkingContainer(pendingMessage);
     }
-
+    
     const logs = container.querySelector('.thinking-logs');
-    let li = logs.querySelector(`li[data-stream-item="${nodeName || 'thinking'}"]`);
-    if (!li) {
-        li = document.createElement('li');
-        li.dataset.streamItem = nodeName || 'thinking';
-        logs.appendChild(li);
-    }
-    if (li.innerHTML !== thinkingText) {
-        li.innerHTML = thinkingText;
+
+    // --- Logic for Appending vs Replacing ---
+
+    // Always clear previous logs when the router provides a new intent.
+    // This signifies the start of a new, distinct logical flow.
+    if (nodeName === 'intent_router' || nodeName === 'router') {
+        logs.innerHTML = '';
     }
 
+    // For the recognition node, handle step-by-step logging.
+    if (nodeName === 'recognition') {
+        const isFirstStep = thinkingText.includes('1/4');
+        // If this is the first step, clear any previous recognition logs from a prior run.
+        if (isFirstStep) {
+            const oldRecLogs = logs.querySelectorAll('li[data-stream-item^="recognition"]');
+            oldRecLogs.forEach(el => el.remove());
+        }
+        
+        // Create a unique key for each step to ensure it's always appended.
+        const stepMatch = thinkingText.match(/Step (\d\/\d)/);
+        const stepKey = stepMatch ? `recognition-step-${stepMatch[1].replace('/', '-')}` : `recognition-other-${Date.now()}`;
+
+        let li = logs.querySelector(`li[data-stream-item="${stepKey}"]`);
+        if (!li) {
+            li = document.createElement('li');
+            li.dataset.streamItem = stepKey;
+            li.innerHTML = thinkingText;
+            logs.appendChild(li);
+        }
+        // No 'else' block, so we never overwrite an existing step.
+
+    } else {
+        // For all other nodes (router, chitchat, etc.), replace their specific log item.
+        let li = logs.querySelector(`li[data-stream-item="${nodeName || 'thinking'}"]`);
+        if (!li) {
+            li = document.createElement('li');
+            li.dataset.streamItem = nodeName || 'thinking';
+            logs.appendChild(li);
+        }
+        if (li.innerHTML !== thinkingText) {
+            li.innerHTML = thinkingText;
+        }
+    }
+
+    // --- Update Summary and Layout ---
     const summary = container.querySelector('.thinking-summary');
     summary.textContent = buildThinkingSummary(thinkingText);
 
@@ -579,12 +593,8 @@ function updateThinkingIndicator(data) {
     }
 }
 
-function showThinkingPlaceholder() {
-    const pendingMessage = ensurePendingAssistantMessage();
-    let container = pendingMessage.querySelector('.thinking-container');
-    if (container) return;
-
-    container = document.createElement('div');
+function createThinkingContainer(parentMessageEl) {
+    const container = document.createElement('div');
     container.className = 'thinking-container';
     container.innerHTML = `
         <button type="button" class="thinking-chip" aria-expanded="false">
@@ -597,7 +607,7 @@ function showThinkingPlaceholder() {
             <ul class="thinking-logs"></ul>
         </div>
     `;
-    pendingMessage.querySelector('.message-content').prepend(container);
+    parentMessageEl.querySelector('.message-content').prepend(container);
 
     const chip = container.querySelector('.thinking-chip');
     const content = container.querySelector('.thinking-content');
@@ -606,6 +616,17 @@ function showThinkingPlaceholder() {
         chip.setAttribute('aria-expanded', String(expanded));
         content.style.maxHeight = expanded ? `${content.scrollHeight}px` : '0px';
     });
+    return container;
+}
+
+function showThinkingPlaceholder() {
+    const pendingMessage = ensurePendingAssistantMessage();
+    let container = pendingMessage.querySelector('.thinking-container');
+    if (container) return;
+    
+    container = createThinkingContainer(pendingMessage);
+    const summary = container.querySelector('.thinking-summary');
+    summary.textContent = '...';
 }
 
 function buildThinkingSummary(text) {
@@ -618,6 +639,7 @@ function buildThinkingSummary(text) {
 
 function extractThinkingText(data, nodeName = '') {
     const analysis = data.analysis || {};
+    // For router, build a detailed summary string.
     if ((nodeName === 'intent_router' || nodeName === 'router') && analysis.intent && typeof analysis.intent === 'string') {
         const confidencePart = typeof analysis.confidence === 'number'
             ? ` (confidence ${Math.round(analysis.confidence * 100)}%)`
@@ -630,16 +652,12 @@ function extractThinkingText(data, nodeName = '') {
             : `${analysis.intent}${confidencePart}`;
         return formatThinkingStep('Recognizing user intent', body);
     }
+    // For all other nodes, directly use the reasoning string. This is simpler and
+    // works perfectly with the step-by-step updates from the recognition node.
     if (analysis.reasoning && typeof analysis.reasoning === 'string') {
-        const raw = analysis.reasoning.trim();
-        const match = raw.match(/^([^:]+):\s*([\s\S]*)$/);
-        if (match) {
-            const title = match[1].trim();
-            const body = match[2].trim();
-            return formatThinkingStep(title, body);
-        }
-        return formatThinkingStep('Thinking', raw);
+        return formatThinkingStep('Log', analysis.reasoning.trim());
     }
+    // Fallbacks for unusual analysis structures.
     if (typeof analysis === 'string' && analysis.trim()) return escapeHtml(analysis.trim());
     const kv = Object.entries(analysis).filter(([, value]) => (
         typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
