@@ -1139,7 +1139,7 @@ function buildNutritionViz(lines) {
                 <div class="nc-food-btns">${foodBtnsHtml}</div>
             </div>
             <div class="nc-bar-section">
-                <div class="nc-section-title">vs Recommended ${mealType} ${guidelineNote}</div>
+                <div class="nc-section-title"><span style="white-space: nowrap;">vs Recommended ${mealType}</span> ${guidelineNote}</div>
                 ${barSVG}
                 <div class="nc-bar-legend">
                     <span class="nc-legend-item"><span class="nc-legend-bar"></span>Actual</span>
