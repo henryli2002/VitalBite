@@ -9,6 +9,7 @@ import json
 from typing import Dict, Any, List, Optional
 
 from dotenv import load_dotenv
+
 # CRITICAL: load_dotenv() MUST be executed BEFORE any LangChain components are imported.
 load_dotenv()
 
@@ -32,7 +33,9 @@ MAX_CONCURRENT_WORKERS = 200
 WORKER_TASKS = []
 
 
-def build_thinking_partial(node_name: str, node_output: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def build_thinking_partial(
+    node_name: str, node_output: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """Build frontend-friendly partial thinking payload for each key node."""
     if node_name in ("router", "intent_router"):
         analysis = node_output.get("analysis")
@@ -56,17 +59,22 @@ def build_thinking_partial(node_name: str, node_output: Dict[str, Any]) -> Optio
 
     if node_name == "recognition":
         recog = node_output.get("recognition_result") or {}
-        final_analysis = recog.get("final_analysis") or []
-        if not isinstance(final_analysis, list) or not final_analysis:
+        # Corrected: Switch from "final_analysis" to "itemized_analysis" to match agent output
+        itemized_analysis = recog.get("itemized_analysis") or []
+        if not isinstance(itemized_analysis, list) or not itemized_analysis:
             return None
-        foods = [str(item.get("identified_name", "")) for item in final_analysis[:3] if isinstance(item, dict)]
-        estimates = [str(item.get("num_portions", "")) for item in final_analysis[:3] if isinstance(item, dict) and item.get("num_portions") is not None]
-        food_part = ", ".join([f for f in foods if f]) or "unknown foods"
-        est_part = ", ".join(estimates) if estimates else "n/a"
+        # Corrected: Switch from "identified_name" to "name" to match agent output
+        foods = [
+            str(item.get("name", ""))
+            for item in itemized_analysis[:3]
+            if isinstance(item, dict)
+        ]
+        food_part = "、".join([f for f in foods if f]) or "食物"
         return {
             "status": "partial",
             "node": "recognition",
-            "analysis": {"reasoning": f"Recognizing food: {food_part}. Estimated portions: {est_part}"},
+            # Corrected: Translate to Chinese and remove non-existent "portions"
+            "analysis": {"reasoning": f"正在识别：{food_part}"},
         }
 
     if node_name == "recommendation":
@@ -81,7 +89,9 @@ def build_thinking_partial(node_name: str, node_output: Dict[str, Any]) -> Optio
         return {
             "status": "partial",
             "node": "recommendation",
-            "analysis": {"reasoning": f"Finding restaurants: Found restaurants: {', '.join(names)}"},
+            "analysis": {
+                "reasoning": f"Finding restaurants: Found restaurants: {', '.join(names)}"
+            },
         }
 
     return None
@@ -95,9 +105,19 @@ def build_langchain_messages(history: List[Dict]) -> List[BaseMessage]:
         content = msg.get("content")
         timestamp = msg.get("timestamp")
         if role == "user":
-            messages.append(HumanMessage(content=content, response_metadata={"timestamp": timestamp} if timestamp else {}))
+            messages.append(
+                HumanMessage(
+                    content=content,
+                    response_metadata={"timestamp": timestamp} if timestamp else {},
+                )
+            )
         elif role == "assistant":
-            messages.append(AIMessage(content=content, response_metadata={"timestamp": timestamp} if timestamp else {}))
+            messages.append(
+                AIMessage(
+                    content=content,
+                    response_metadata={"timestamp": timestamp} if timestamp else {},
+                )
+            )
     return messages
 
 
@@ -105,9 +125,9 @@ async def process_task(payload: Dict[str, Any]):
     user_id = payload.get("user_id", "unknown")
     thread_id = payload.get("thread_id", "")
     response_channel = payload.get("response_channel")
-    
+
     logger.info(f"[{user_id}] Picked up AI task (thread_id: {thread_id})...")
-    
+
     initial_state = {
         "messages": build_langchain_messages(payload.get("messages", [])),
         "session_id": payload.get("session_id", ""),
@@ -117,12 +137,12 @@ async def process_task(payload: Dict[str, Any]):
         "user_context": payload.get("user_context", {}),
         "response_channel": response_channel,
     }
-    
+
     config = {"configurable": {"thread_id": thread_id}}
-    
+
     try:
         accumulated_state = initial_state.copy()
-        
+
         async for output in graph.astream(initial_state, config=config):
             for node_name, node_output in output.items():
                 logger.info(f"[{user_id}] Node completed: {node_name}")
@@ -130,16 +150,24 @@ async def process_task(payload: Dict[str, Any]):
                 if response_channel:
                     partial_payload = build_thinking_partial(node_name, node_output)
                     if partial_payload:
-                        await redis_client.publish(response_channel, json.dumps(partial_payload))
-                
+                        await redis_client.publish(
+                            response_channel, json.dumps(partial_payload)
+                        )
+
         result = accumulated_state
-        
+
         analysis = result.get("analysis", {})
         detected_intent = analysis.get("intent", "chitchat")
-        
+
         # If intent is goalplanning and we have full history provided, re-invoke
-        if detected_intent == "goalplanning" and payload.get("invoke_full_history") and payload.get("full_messages"):
-            logger.info(f"[{user_id}] Goalplanning detected in Queue. Reprocessing with FULL history.")
+        if (
+            detected_intent == "goalplanning"
+            and payload.get("invoke_full_history")
+            and payload.get("full_messages")
+        ):
+            logger.info(
+                f"[{user_id}] Goalplanning detected in Queue. Reprocessing with FULL history."
+            )
             full_msgs = build_langchain_messages(payload.get("full_messages", []))
             full_state = {
                 "messages": full_msgs,
@@ -151,7 +179,7 @@ async def process_task(payload: Dict[str, Any]):
                 "response_channel": response_channel,
             }
             full_config = {"configurable": {"thread_id": f"{thread_id}_full"}}
-            
+
             accumulated_state = full_state.copy()
             async for output in graph.astream(full_state, config=full_config):
                 for node_name, node_output in output.items():
@@ -160,10 +188,12 @@ async def process_task(payload: Dict[str, Any]):
                     if response_channel:
                         partial_payload = build_thinking_partial(node_name, node_output)
                         if partial_payload:
-                            await redis_client.publish(response_channel, json.dumps(partial_payload))
-            
+                            await redis_client.publish(
+                                response_channel, json.dumps(partial_payload)
+                            )
+
             result = accumulated_state
-            
+
         # Extract final AI response (safe null-check)
         final_msg = "No response generated."
         result_messages = result.get("messages", [])
@@ -175,12 +205,16 @@ async def process_task(payload: Dict[str, Any]):
         response_payload = {
             "status": "success",
             "messages": [{"role": "assistant", "content": final_msg}],
-            "analysis": result.get("analysis", {})
+            "analysis": result.get("analysis", {}),
         }
-        
-        logger.info(f"[{user_id}] Queue execution complete. Intent: {result.get('analysis', {}).get('intent', 'unknown')}")
-        logger.info(f"[{user_id}] Publishing response to Redis Channel: {response_channel}")
-        
+
+        logger.info(
+            f"[{user_id}] Queue execution complete. Intent: {result.get('analysis', {}).get('intent', 'unknown')}"
+        )
+        logger.info(
+            f"[{user_id}] Publishing response to Redis Channel: {response_channel}"
+        )
+
         await redis_client.publish(response_channel, json.dumps(response_payload))
 
     except Exception as e:
@@ -189,7 +223,7 @@ async def process_task(payload: Dict[str, Any]):
         error_payload = {
             "status": "error",
             "message": f"Backend Error: {str(e)}",
-            "node_failure": True
+            "node_failure": True,
         }
         if response_channel:
             await redis_client.publish(response_channel, json.dumps(error_payload))
@@ -217,6 +251,7 @@ async def startup_event():
     # Pre-warm IP geolocation cache (saves 3-5s on first recommendation)
     try:
         from langgraph_app.tools.map.ip_location import get_location_from_ip_async
+
         loc = await get_location_from_ip_async()
         logger.info(f"Pre-warmed IP geolocation cache: {loc}")
     except Exception as e:
@@ -235,4 +270,5 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8001)
