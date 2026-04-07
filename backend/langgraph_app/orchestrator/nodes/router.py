@@ -69,6 +69,7 @@ def _parse_intent_output(raw_text: str) -> Optional[IntentAnalysis]:
         return None
     return IntentAnalysis(intent=intent, confidence=confidence, reasoning=reasoning)
 
+
 @with_semaphore("intent")
 async def intent_router_node(state: GraphState) -> NodeOutput:
     """
@@ -96,20 +97,22 @@ async def intent_router_node(state: GraphState) -> NodeOutput:
     profile_context = ""
     if user_profile:
         profile_context = "\n\nUser Profile & Health Information:\n" + "\n".join(
-            f"- {k.replace('_', ' ').title()}: {v}" for k, v in user_profile.items() if v
+            f"- {k.replace('_', ' ').title()}: {v}"
+            for k, v in user_profile.items()
+            if v
         )
 
     system_prompt = f"""[ROLE]
 You are the intent router for WABI, an AI food assistant.
 
 [OBJECTIVE]
-Identify the user's primary goal based on the conversation history.
+Identify the user's primary goal based on the conversation history. Pay close attention to whether a food image is present.
 
 [CONTEXT]
 Current Time: {current_hour}:{current_minute:02d} ({meal_time}){profile_context}
 
 [INTENT RULES]
-1. "recognition": Goal is to identify food/nutrition. STRICT REQ: There MUST be a valid food image.
+1. "recognition": Goal is to identify food/nutrition from an image. If a food image is present, confidence for this intent should be VERY HIGH (>0.9).
 2. "recommendation": Finding places to eat. Triggers on explicit requests or implicit signs of hunger during meal times.
 3. "goalplanning": Diet planning, habit building, and long-term nutrition goals.
 4. "tutorial": User needs help, asks for image recognition without an image, provides vague inputs ("I want this" without context), or inputs meaningless noise.
@@ -141,7 +144,9 @@ REASONING: <brief but specific why this intent fits the user message>"""
             except Exception:
                 redis_client = None
 
-            async for chunk in client.astream(messages_to_send, config={"callbacks": []}):
+            async for chunk in client.astream(
+                messages_to_send, config={"callbacks": []}
+            ):
                 piece = _extract_text_from_chunk_content(getattr(chunk, "content", ""))
                 if not piece:
                     continue
@@ -151,11 +156,20 @@ REASONING: <brief but specific why this intent fits the user message>"""
                     intent_so_far = _extract_field(streamed_text, "INTENT").lower()
                     confidence_so_far = _extract_field(streamed_text, "CONFIDENCE")
                     reasoning_so_far = _extract_field(streamed_text, "REASONING")
-                    if reasoning_so_far and reasoning_so_far != last_published_reasoning:
-                        if len(reasoning_so_far) - len(last_published_reasoning) < 12 and not reasoning_so_far.endswith((".", "!", "?", "。", "！", "？", ";", "；")):
+                    if (
+                        reasoning_so_far
+                        and reasoning_so_far != last_published_reasoning
+                    ):
+                        if len(reasoning_so_far) - len(
+                            last_published_reasoning
+                        ) < 12 and not reasoning_so_far.endswith(
+                            (".", "!", "?", "。", "！", "？", ";", "；")
+                        ):
                             continue
                         try:
-                            confidence_value = float(confidence_so_far) if confidence_so_far else None
+                            confidence_value = (
+                                float(confidence_so_far) if confidence_so_far else None
+                            )
                         except Exception:
                             confidence_value = None
                         partial_payload = {
@@ -169,10 +183,14 @@ REASONING: <brief but specific why this intent fits the user message>"""
                             },
                         }
                         try:
-                            await redis_client.publish(response_channel, json.dumps(partial_payload))
+                            await redis_client.publish(
+                                response_channel, json.dumps(partial_payload)
+                            )
                             last_published_reasoning = reasoning_so_far
                         except Exception as publish_err:
-                            logger.warning(f"[router] Streaming publish failed, continue without partial stream: {publish_err}")
+                            logger.warning(
+                                f"[router] Streaming publish failed, continue without partial stream: {publish_err}"
+                            )
                             try:
                                 await redis_client.aclose()
                             except Exception:
