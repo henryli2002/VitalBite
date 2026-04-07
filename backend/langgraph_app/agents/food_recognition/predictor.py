@@ -10,6 +10,7 @@ _finetuned_model = None
 _finetuned_norm = None
 _finetuned_transform = None
 
+
 def get_model():
     global _finetuned_model, _finetuned_norm, _finetuned_transform
     if _finetuned_model is not None:
@@ -31,9 +32,13 @@ def get_model():
         norm = json.load(f)
     _finetuned_norm = norm
 
-    backbone = models.mobilenet_v3_small(weights=None)
+    backbone = models.efficientnet_b0(weights=None)
+    # EfficientNet-B0 classifier: 1280 -> 256 -> 5
     backbone.classifier = nn.Sequential(
-        nn.Linear(576, 256), nn.ReLU(), nn.Dropout(0.3), nn.Linear(256, 5),
+        nn.Linear(1280, 256),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(256, 5),
     )
 
     if torch.backends.mps.is_available():
@@ -49,13 +54,16 @@ def get_model():
     backbone.eval()
     _finetuned_model = (backbone, device)
 
-    _finetuned_transform = T.Compose([
-        T.Resize((224, 224)),
-        T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    _finetuned_transform = T.Compose(
+        [
+            T.Resize((224, 224)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     return _finetuned_model, _finetuned_norm, _finetuned_transform
+
 
 def predict_nutrition(image_bytes: bytes) -> Dict[str, float]:
     import torch
@@ -82,9 +90,13 @@ def predict_nutrition(image_bytes: bytes) -> Dict[str, float]:
         "total_protein": round(float(pred_raw[4]), 2),
     }
 
+
 def extract_image_bytes(messages) -> bytes:
     for msg in reversed(messages):
-        if getattr(msg, "type", "") == "human" or msg.__class__.__name__ == "HumanMessage":
+        if (
+            getattr(msg, "type", "") == "human"
+            or msg.__class__.__name__ == "HumanMessage"
+        ):
             if isinstance(msg.content, list):
                 for part in msg.content:
                     if isinstance(part, dict) and part.get("type") == "image_url":
