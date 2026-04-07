@@ -5,13 +5,17 @@ Compares four approaches:
 1. Graph Pipeline: recognition_node (food ID → RAG → portion estimation → weight calc)
 2. Direct LLM: Zero-shot, LLM directly estimates nutrition from image
 3. Few-shot LLM: LLM estimates nutrition with reference images as calibration anchors
-4. Fine-tuned: MobileNetV3-Small fine-tuned on training split, local inference
+4. Fine-tuned CNN: Fine-tuned on training split, local inference
+   - Supports: MobileNetV3-Small, MobileNetV4-Small, EfficientNet-Lite0
 
 Metric: wMAPE = Σ|y_i - ŷ_i| / Σy_i
 
 Usage:
     python eval/run_eval.py --n 30
-    python eval/run_eval.py --n 30 --provider gemini
+    python eval/run_eval.py --n 30 --model mobilenet_v3_small
+    python eval/run_eval.py --n 30 --model mobilenet_v3_large
+    python eval/run_eval.py --n 30 --model mobilenetv4_conv_small
+    python eval/run_eval.py --n 30 --model tf_efficientnet_lite4
     python eval/run_eval.py --resume
 """
 
@@ -31,12 +35,14 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 import numpy as np
+import timm
 
 # --- Setup project path ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from dotenv import load_dotenv
+
 load_dotenv(PROJECT_ROOT / ".env")
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -56,6 +62,7 @@ NUM_FEWSHOT_EXAMPLES = 5
 # ──────────────────────────────────────────────
 class DirectNutritionEstimate(BaseModel):
     """Direct estimation of total nutritional values from a food image."""
+
     total_mass_g: float = Field(description="Estimated total mass of all food in grams")
     total_calories_kcal: float = Field(description="Estimated total calories in kcal")
     total_fat_g: float = Field(description="Estimated total fat in grams")
@@ -73,7 +80,9 @@ def load_dataset() -> pd.DataFrame:
     with open(DATASET_DIR / "dish_images.pkl", "rb") as f:
         images_df = pickle.load(f)
     merged = images_df.merge(gt, left_on="dish", right_on="dish_id", how="inner")
-    print(f"  Ground truth: {len(gt)} | Images: {len(images_df)} | Matched: {len(merged)}")
+    print(
+        f"  Ground truth: {len(gt)} | Images: {len(images_df)} | Matched: {len(merged)}"
+    )
     return merged
 
 
@@ -82,18 +91,24 @@ def image_to_base64_url(image_bytes: bytes) -> str:
     return f"data:image/png;base64,{b64}"
 
 
-def build_image_message(image_bytes: bytes, text: str = "What food is in this image?") -> HumanMessage:
+def build_image_message(
+    image_bytes: bytes, text: str = "What food is in this image?"
+) -> HumanMessage:
     image_url = image_to_base64_url(image_bytes)
-    return HumanMessage(content=[
-        {"type": "image_url", "image_url": {"url": image_url}},
-        {"type": "text", "text": text},
-    ])
+    return HumanMessage(
+        content=[
+            {"type": "image_url", "image_url": {"url": image_url}},
+            {"type": "text", "text": text},
+        ]
+    )
 
 
 # ──────────────────────────────────────────────
 # Few-shot: Reference Pool
 # ──────────────────────────────────────────────
-def select_fewshot_references(dataset: pd.DataFrame, test_ids: set, seed: int = 42) -> pd.DataFrame:
+def select_fewshot_references(
+    dataset: pd.DataFrame, test_ids: set, seed: int = 42
+) -> pd.DataFrame:
     """
     Select diverse reference examples from the dataset (excluding test samples).
     Stratified by calorie range to give the LLM a good calibration spread.
@@ -101,7 +116,9 @@ def select_fewshot_references(dataset: pd.DataFrame, test_ids: set, seed: int = 
     pool = dataset[~dataset["dish"].isin(test_ids)].copy()
 
     # Stratify by calorie quintiles for diversity
-    pool["cal_bin"] = pd.qcut(pool["total_calories"], q=NUM_FEWSHOT_EXAMPLES, labels=False, duplicates="drop")
+    pool["cal_bin"] = pd.qcut(
+        pool["total_calories"], q=NUM_FEWSHOT_EXAMPLES, labels=False, duplicates="drop"
+    )
     refs = pool.groupby("cal_bin", group_keys=False).apply(
         lambda g: g.sample(n=1, random_state=seed)
     )
@@ -113,8 +130,10 @@ def select_fewshot_references(dataset: pd.DataFrame, test_ids: set, seed: int = 
         )
         refs = pd.concat([refs, extra])
 
-    print(f"  Few-shot references: {len(refs)} samples (cal range: "
-          f"{refs['total_calories'].min():.0f}-{refs['total_calories'].max():.0f} kcal)")
+    print(
+        f"  Few-shot references: {len(refs)} samples (cal range: "
+        f"{refs['total_calories'].min():.0f}-{refs['total_calories'].max():.0f} kcal)"
+    )
     return refs.head(NUM_FEWSHOT_EXAMPLES)
 
 
@@ -127,11 +146,17 @@ async def run_graph_recognition(image_bytes: bytes, provider: str = None) -> Dic
     message = build_image_message(image_bytes, "Please analyze the food in this image.")
     state = {
         "messages": [message],
-        "user_id": "eval_user", "user_name": "Eval", "session_id": "eval_session",
-        "user_profile": {}, "user_context": {}, "response_channel": "",
+        "user_id": "eval_user",
+        "user_name": "Eval",
+        "session_id": "eval_session",
+        "user_profile": {},
+        "user_context": {},
+        "response_channel": "",
         "analysis": {"intent": "recognition", "confidence": 1.0, "reasoning": "eval"},
-        "recognition_result": None, "recommendation_result": None,
-        "message_timestamps": [], "debug_logs": [],
+        "recognition_result": None,
+        "recommendation_result": None,
+        "message_timestamps": [],
+        "debug_logs": [],
     }
 
     result = await recognition_node(state)
@@ -153,19 +178,31 @@ async def run_graph_recognition(image_bytes: bytes, provider: str = None) -> Dic
         if matches:
             nutrients = matches[0].get("nutrients_per_100g", {})
             factor = weight_g / 100.0
-            for key, target in [("Energy", "cal"), ("Protein", "pro"), ("Carbohydrate", "carb"), ("Total Fat", "fat")]:
+            for key, target in [
+                ("Energy", "cal"),
+                ("Protein", "pro"),
+                ("Carbohydrate", "carb"),
+                ("Total Fat", "fat"),
+            ]:
                 val = nutrients.get(key, {})
                 if isinstance(val, dict):
                     v = val.get("value", 0) * factor
-                    if target == "cal": total_calories += v
-                    elif target == "pro": total_protein += v
-                    elif target == "carb": total_carb += v
-                    elif target == "fat": total_fat += v
+                    if target == "cal":
+                        total_calories += v
+                    elif target == "pro":
+                        total_protein += v
+                    elif target == "carb":
+                        total_carb += v
+                    elif target == "fat":
+                        total_fat += v
 
     return {
-        "total_mass": round(total_mass, 2), "total_calories": round(total_calories, 2),
-        "total_fat": round(total_fat, 2), "total_carb": round(total_carb, 2),
-        "total_protein": round(total_protein, 2), "food_names": food_names,
+        "total_mass": round(total_mass, 2),
+        "total_calories": round(total_calories, 2),
+        "total_fat": round(total_fat, 2),
+        "total_carb": round(total_carb, 2),
+        "total_protein": round(total_protein, 2),
+        "food_names": food_names,
     }
 
 
@@ -190,7 +227,9 @@ Look at the food image and estimate the TOTAL nutritional values for ALL food sh
 3. Be as accurate as possible based on visual portion sizes.
 4. Output ONLY the structured JSON."""
 
-    message = build_image_message(image_bytes, "Estimate the total nutritional content of this meal.")
+    message = build_image_message(
+        image_bytes, "Estimate the total nutritional content of this meal."
+    )
 
     for attempt in range(3):
         try:
@@ -208,12 +247,14 @@ Look at the food image and estimate the TOTAL nutritional values for ALL food sh
                 }
             else:
                 return {
-                    "total_mass": result.total_mass_g, "total_calories": result.total_calories_kcal,
-                    "total_fat": result.total_fat_g, "total_carb": result.total_carb_g,
+                    "total_mass": result.total_mass_g,
+                    "total_calories": result.total_calories_kcal,
+                    "total_fat": result.total_fat_g,
+                    "total_carb": result.total_carb_g,
                     "total_protein": result.total_protein_g,
                 }
         except Exception as e:
-            print(f"    Direct attempt {attempt+1} failed: {e}")
+            print(f"    Direct attempt {attempt + 1} failed: {e}")
             if attempt < 2:
                 await asyncio.sleep(1)
 
@@ -223,7 +264,9 @@ Look at the food image and estimate the TOTAL nutritional values for ALL food sh
 # ──────────────────────────────────────────────
 # Method 3: Few-shot LLM (with reference images)
 # ──────────────────────────────────────────────
-async def run_fewshot_llm(image_bytes: bytes, ref_rows: pd.DataFrame, provider: str = None) -> Dict:
+async def run_fewshot_llm(
+    image_bytes: bytes, ref_rows: pd.DataFrame, provider: str = None
+) -> Dict:
     """
     Give the LLM a few reference food images with their ground-truth nutrition,
     then ask it to estimate the test image. Visual calibration anchors.
@@ -252,19 +295,29 @@ followed by a TARGET image. Use the references as calibration to estimate the ta
     for i, (_, ref_row) in enumerate(ref_rows.iterrows()):
         ref_url = image_to_base64_url(ref_row["rgb_image"])
         content_parts.append({"type": "image_url", "image_url": {"url": ref_url}})
-        content_parts.append({"type": "text", "text": (
-            f"REFERENCE {i+1}: "
-            f"total_mass={ref_row['total_mass']:.1f}g, "
-            f"calories={ref_row['total_calories']:.0f}kcal, "
-            f"fat={ref_row['total_fat']:.1f}g, "
-            f"carb={ref_row['total_carb']:.1f}g, "
-            f"protein={ref_row['total_protein']:.1f}g"
-        )})
+        content_parts.append(
+            {
+                "type": "text",
+                "text": (
+                    f"REFERENCE {i + 1}: "
+                    f"total_mass={ref_row['total_mass']:.1f}g, "
+                    f"calories={ref_row['total_calories']:.0f}kcal, "
+                    f"fat={ref_row['total_fat']:.1f}g, "
+                    f"carb={ref_row['total_carb']:.1f}g, "
+                    f"protein={ref_row['total_protein']:.1f}g"
+                ),
+            }
+        )
 
     # Add target image
     target_url = image_to_base64_url(image_bytes)
     content_parts.append({"type": "image_url", "image_url": {"url": target_url}})
-    content_parts.append({"type": "text", "text": "TARGET: Estimate the total nutritional content of this meal."})
+    content_parts.append(
+        {
+            "type": "text",
+            "text": "TARGET: Estimate the total nutritional content of this meal.",
+        }
+    )
 
     message = HumanMessage(content=content_parts)
 
@@ -284,12 +337,14 @@ followed by a TARGET image. Use the references as calibration to estimate the ta
                 }
             else:
                 return {
-                    "total_mass": result.total_mass_g, "total_calories": result.total_calories_kcal,
-                    "total_fat": result.total_fat_g, "total_carb": result.total_carb_g,
+                    "total_mass": result.total_mass_g,
+                    "total_calories": result.total_calories_kcal,
+                    "total_fat": result.total_fat_g,
+                    "total_carb": result.total_carb_g,
                     "total_protein": result.total_protein_g,
                 }
         except Exception as e:
-            print(f"    Fewshot attempt {attempt+1} failed: {e}")
+            print(f"    Fewshot attempt {attempt + 1} failed: {e}")
             if attempt < 2:
                 await asyncio.sleep(1)
 
@@ -297,30 +352,37 @@ followed by a TARGET image. Use the references as calibration to estimate the ta
 
 
 # ──────────────────────────────────────────────
-# Method 4: Fine-tuned MobileNetV3
+# Method 4: Fine-tuned CNN
 # ──────────────────────────────────────────────
 _finetuned_model = None
 _finetuned_norm = None
 _finetuned_transform = None
+_current_model_name = None
 
 
-def _load_finetuned_model():
-    """Lazy-load the fine-tuned model (once)."""
-    global _finetuned_model, _finetuned_norm, _finetuned_transform
-    if _finetuned_model is not None:
+def get_model_dir(model_name: str) -> Path:
+    """Get model directory for specific model."""
+    return EVAL_DIR / f"model_{model_name}"
+
+
+def _load_finetuned_model(model_name: str = "mobilenet_v3_small"):
+    """Lazy-load the fine-tuned model (once per model type)."""
+    global _finetuned_model, _finetuned_norm, _finetuned_transform, _current_model_name
+
+    if _finetuned_model is not None and _current_model_name == model_name:
         return _finetuned_model, _finetuned_norm, _finetuned_transform
 
     import torch
     import torch.nn as nn
     from torchvision import models, transforms as T
 
-    model_dir = EVAL_DIR / "model"
+    model_dir = get_model_dir(model_name)
     model_path = model_dir / "best_model.pt"
     norm_path = model_dir / "norm_stats.json"
 
     if not model_path.exists() or not norm_path.exists():
         raise FileNotFoundError(
-            f"Fine-tuned model not found at {model_dir}. Run: python eval/train_model.py"
+            f"Fine-tuned model not found at {model_dir}. Run: python eval/train_model.py --model {model_name}"
         )
 
     # Load norm stats
@@ -328,11 +390,24 @@ def _load_finetuned_model():
         norm = json.load(f)
     _finetuned_norm = norm
 
-    # Build model
-    backbone = models.mobilenet_v3_small(weights=None)
-    backbone.classifier = nn.Sequential(
-        nn.Linear(576, 256), nn.ReLU(), nn.Dropout(0.3), nn.Linear(256, 5),
-    )
+    # Build model based on architecture
+    if model_name in ("mobilenet_v3_small", "mobilenet_v3_large", "efficientnet_b0"):
+        if model_name == "mobilenet_v3_small":
+            backbone = models.mobilenet_v3_small(weights=None)
+            num_features = 576
+        elif model_name == "mobilenet_v3_large":
+            backbone = models.mobilenet_v3_large(weights=None)
+            num_features = 960
+        else:  # efficientnet_b0
+            backbone = models.efficientnet_b0(weights=None)
+            num_features = 1280
+
+        backbone.classifier = nn.Sequential(
+            nn.Linear(num_features, 256), nn.ReLU(), nn.Dropout(0.3), nn.Linear(256, 5)
+        )
+    else:
+        # Use timm for other models
+        backbone = timm.create_model(model_name, pretrained=False, num_classes=5)
 
     # Load weights
     if torch.backends.mps.is_available():
@@ -345,23 +420,28 @@ def _load_finetuned_model():
     backbone.to(device)
     backbone.eval()
     _finetuned_model = (backbone, device)
+    _current_model_name = model_name
 
-    _finetuned_transform = T.Compose([
-        T.Resize((224, 224)),
-        T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    _finetuned_transform = T.Compose(
+        [
+            T.Resize((224, 224)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
-    print(f"  Fine-tuned model loaded on {device}")
+    print(f"  Fine-tuned model ({model_name}) loaded on {device}")
     return _finetuned_model, _finetuned_norm, _finetuned_transform
 
 
-async def run_finetuned(image_bytes: bytes) -> Dict:
-    """Run the fine-tuned MobileNetV3 model for nutrition estimation."""
+async def run_finetuned(
+    image_bytes: bytes, model_name: str = "mobilenet_v3_small"
+) -> Dict:
+    """Run the fine-tuned CNN model for nutrition estimation."""
     import torch
     from PIL import Image as PILImage
 
-    (model, device), norm, transform = _load_finetuned_model()
+    (model, device), norm, transform = _load_finetuned_model(model_name)
     target_mean = np.array(norm["target_mean"], dtype=np.float32)
     target_std = np.array(norm["target_std"], dtype=np.float32)
 
@@ -373,7 +453,7 @@ async def run_finetuned(image_bytes: bytes) -> Dict:
 
     # Denormalize
     pred_raw = pred_norm * target_std + target_mean
-    pred_raw = np.maximum(pred_raw, 0)  # nutrition values can't be negative
+    pred_raw = np.maximum(pred_raw, 0)
 
     return {
         "total_mass": round(float(pred_raw[0]), 2),
@@ -417,17 +497,25 @@ def per_sample_ape(gt_val: float, pred_val: float) -> Optional[float]:
 METHODS = ["graph", "direct", "fewshot", "finetuned"]
 
 
-async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = False):
-    # Resolve model name
+async def evaluate(
+    n: int,
+    provider: str = None,
+    seed: int = 42,
+    resume: bool = False,
+    cnn_model: str = "mobilenet_v3_small",
+):
+    # Resolve LLM model name
     from langgraph_app.config import config as app_config
+
     resolved_provider = (provider or app_config.LLM_PROVIDER).lower()
     if resolved_provider == "gemini":
-        model_name = app_config.GEMINI_MODEL_NAME
+        llm_model_name = app_config.GEMINI_MODEL_NAME
     elif resolved_provider == "openai":
-        model_name = app_config.OPENAI_MODEL_NAME
+        llm_model_name = app_config.OPENAI_MODEL_NAME
     else:
-        model_name = app_config.BEDROCK_CLAUDE_MODEL_NAME
-    print(f"Model: {model_name} (provider: {resolved_provider})")
+        llm_model_name = app_config.BEDROCK_CLAUDE_MODEL_NAME
+    print(f"LLM: {llm_model_name} (provider: {resolved_provider})")
+    print(f"CNN Model: {cnn_model}")
 
     dataset = load_dataset()
 
@@ -435,7 +523,7 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
     checkpoint_path = RESULTS_DIR / "checkpoint.json"
     results_path = RESULTS_DIR / f"eval_{timestamp}.json"
 
-    # Load checkpoint
+    # Load checkpoint (handle both old and new format)
     records = []
     evaluated_ids = set()
     if resume and checkpoint_path.exists():
@@ -443,6 +531,11 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
             checkpoint = json.load(f)
         records = checkpoint.get("records", [])
         evaluated_ids = {r["dish_id"] for r in records}
+        saved_cnn = checkpoint.get("cnn_model", "mobilenet_v3_small")
+        if saved_cnn != cnn_model:
+            print(
+                f"WARNING: Checkpoint was for CNN model '{saved_cnn}', but running with '{cnn_model}'"
+            )
         print(f"Resuming from checkpoint: {len(records)} already done")
 
     # Sample test IDs
@@ -450,7 +543,7 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
     all_ids = dataset["dish"].tolist()
     random.shuffle(all_ids)
     remaining_ids = [did for did in all_ids if did not in evaluated_ids]
-    sample_ids = remaining_ids[:max(0, n - len(records))]
+    sample_ids = remaining_ids[: max(0, n - len(records))]
     total_to_run = len(sample_ids)
     test_id_set = set(sample_ids) | evaluated_ids
 
@@ -472,11 +565,13 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
         current = idx + 1 + len(evaluated_ids)
         total = len(evaluated_ids) + total_to_run
         print(f"[{current}/{total}] {dish_id}")
-        print(f"  GT: mass={ground_truth['total_mass']:.1f}g, "
-              f"cal={ground_truth['total_calories']:.0f}kcal, "
-              f"fat={ground_truth['total_fat']:.1f}g, "
-              f"carb={ground_truth['total_carb']:.1f}g, "
-              f"prot={ground_truth['total_protein']:.1f}g")
+        print(
+            f"  GT: mass={ground_truth['total_mass']:.1f}g, "
+            f"cal={ground_truth['total_calories']:.0f}kcal, "
+            f"fat={ground_truth['total_fat']:.1f}g, "
+            f"carb={ground_truth['total_carb']:.1f}g, "
+            f"prot={ground_truth['total_protein']:.1f}g"
+        )
 
         results_per_method = {}
         times_per_method = {}
@@ -487,9 +582,11 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
             graph_result = await run_graph_recognition(image_bytes, provider)
             times_per_method["graph"] = time.time() - t0
             results_per_method["graph"] = graph_result
-            print(f"  Graph  ({times_per_method['graph']:.1f}s): "
-                  f"mass={graph_result['total_mass']:.1f}g, cal={graph_result['total_calories']:.0f}, "
-                  f"foods={graph_result.get('food_names', [])}")
+            print(
+                f"  Graph  ({times_per_method['graph']:.1f}s): "
+                f"mass={graph_result['total_mass']:.1f}g, cal={graph_result['total_calories']:.0f}, "
+                f"foods={graph_result.get('food_names', [])}"
+            )
         except Exception as e:
             times_per_method["graph"] = time.time() - t0
             results_per_method["graph"] = {m: 0 for m in METRICS}
@@ -504,8 +601,10 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
             direct_result = await run_direct_llm(image_bytes, provider)
             times_per_method["direct"] = time.time() - t0
             results_per_method["direct"] = direct_result
-            print(f"  Direct ({times_per_method['direct']:.1f}s): "
-                  f"mass={direct_result['total_mass']:.1f}g, cal={direct_result['total_calories']:.0f}")
+            print(
+                f"  Direct ({times_per_method['direct']:.1f}s): "
+                f"mass={direct_result['total_mass']:.1f}g, cal={direct_result['total_calories']:.0f}"
+            )
         except Exception as e:
             times_per_method["direct"] = time.time() - t0
             results_per_method["direct"] = {m: 0 for m in METRICS}
@@ -520,8 +619,10 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
             fewshot_result = await run_fewshot_llm(image_bytes, ref_rows, provider)
             times_per_method["fewshot"] = time.time() - t0
             results_per_method["fewshot"] = fewshot_result
-            print(f"  Fewshot({times_per_method['fewshot']:.1f}s): "
-                  f"mass={fewshot_result['total_mass']:.1f}g, cal={fewshot_result['total_calories']:.0f}")
+            print(
+                f"  Fewshot({times_per_method['fewshot']:.1f}s): "
+                f"mass={fewshot_result['total_mass']:.1f}g, cal={fewshot_result['total_calories']:.0f}"
+            )
         except Exception as e:
             times_per_method["fewshot"] = time.time() - t0
             results_per_method["fewshot"] = {m: 0 for m in METRICS}
@@ -531,11 +632,13 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
         # --- Fine-tuned ---
         t0 = time.time()
         try:
-            finetuned_result = await run_finetuned(image_bytes)
+            finetuned_result = await run_finetuned(image_bytes, cnn_model)
             times_per_method["finetuned"] = time.time() - t0
             results_per_method["finetuned"] = finetuned_result
-            print(f"  Tuned  ({times_per_method['finetuned']:.1f}s): "
-                  f"mass={finetuned_result['total_mass']:.1f}g, cal={finetuned_result['total_calories']:.0f}")
+            print(
+                f"  Tuned  ({times_per_method['finetuned']:.1f}s): "
+                f"mass={finetuned_result['total_mass']:.1f}g, cal={finetuned_result['total_calories']:.0f}"
+            )
         except Exception as e:
             times_per_method["finetuned"] = time.time() - t0
             results_per_method["finetuned"] = {m: 0 for m in METRICS}
@@ -563,9 +666,14 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
 
         # Save checkpoint
         checkpoint_data = {
-            "model": model_name, "provider": resolved_provider,
-            "seed": seed, "n": n, "completed": len(records),
-            "fewshot_refs": ref_dish_ids, "records": records,
+            "cnn_model": cnn_model,
+            "llm_provider": resolved_provider,
+            "llm_model": llm_model_name,
+            "seed": seed,
+            "n": n,
+            "completed": len(records),
+            "fewshot_refs": ref_dish_ids,
+            "records": records,
         }
         with open(checkpoint_path, "w") as f:
             json.dump(checkpoint_data, f, indent=2, ensure_ascii=False)
@@ -580,20 +688,27 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
     valid_records = records  # keep all, even failures (they score 0)
 
     print("=" * 80)
-    print(f"EVALUATION RESULTS  |  Model: {model_name}  |  {len(records)} samples")
+    print("=" * 80)
+    print(
+        f"EVALUATION RESULTS  |  LLM: {llm_model_name} | CNN: {cnn_model} | {len(records)} samples"
+    )
     print("=" * 80)
 
     all_wmape = {}
     for method in METHODS:
         all_wmape[method] = compute_all_wmape(valid_records, method)
 
-    header = f"{'Metric':<18} {'Graph':>10} {'Direct':>10} {'Fewshot':>10} {'Winner':>10}"
+    header = (
+        f"{'Metric':<18} {'Graph':>10} {'Direct':>10} {'Fewshot':>10} {'Winner':>10}"
+    )
     print(header)
     print("-" * len(header))
     for metric in METRICS:
         vals = {m: all_wmape[m][metric] for m in METHODS}
         best = min(vals, key=vals.get)
-        print(f"{metric:<18} {vals['graph']:>9.1%} {vals['direct']:>9.1%} {vals['fewshot']:>9.1%} {best:>10}")
+        print(
+            f"{metric:<18} {vals['graph']:>9.1%} {vals['direct']:>9.1%} {vals['fewshot']:>9.1%} {best:>10}"
+        )
 
     # Timing
     print()
@@ -605,11 +720,18 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
     # Save
     final_output = {
         "meta": {
-            "timestamp": timestamp, "model": model_name, "provider": resolved_provider,
-            "seed": seed, "n_evaluated": len(records),
-            "fewshot_refs": ref_dish_ids, "num_fewshot_examples": NUM_FEWSHOT_EXAMPLES,
+            "timestamp": timestamp,
+            "llm_model": llm_model_name,
+            "llm_provider": resolved_provider,
+            "cnn_model": cnn_model,
+            "seed": seed,
+            "n_evaluated": len(records),
+            "fewshot_refs": ref_dish_ids,
+            "num_fewshot_examples": NUM_FEWSHOT_EXAMPLES,
         },
-        "wmape": {m: {k: round(v, 6) for k, v in all_wmape[m].items()} for m in METHODS},
+        "wmape": {
+            m: {k: round(v, 6) for k, v in all_wmape[m].items()} for m in METHODS
+        },
         "records": records,
     }
     with open(results_path, "w") as f:
@@ -621,12 +743,36 @@ async def evaluate(n: int, provider: str = None, seed: int = 42, resume: bool = 
 
 def main():
     parser = argparse.ArgumentParser(description="WABI Food Recognition Evaluation")
-    parser.add_argument("--n", type=int, default=20, help="Number of samples (default: 20)")
+    parser.add_argument(
+        "--n", type=int, default=20, help="Number of samples (default: 20)"
+    )
     parser.add_argument("--provider", type=str, default=None, help="LLM provider")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="mobilenet_v3_small",
+        choices=[
+            "mobilenet_v3_small",
+            "mobilenet_v3_large",
+            "efficientnet_b0",
+            "mobilenetv4_conv_small",
+            "tf_efficientnet_lite4",
+            "mobilenetv4_conv_large",
+        ],
+        help="CNN model for fine-tuned evaluation",
+    )
     args = parser.parse_args()
-    asyncio.run(evaluate(n=args.n, provider=args.provider, seed=args.seed, resume=args.resume))
+    asyncio.run(
+        evaluate(
+            n=args.n,
+            provider=args.provider,
+            seed=args.seed,
+            resume=args.resume,
+            cnn_model=args.model,
+        )
+    )
 
 
 if __name__ == "__main__":
