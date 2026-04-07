@@ -34,18 +34,20 @@ The following table summarizes the wMAPE for the `finetuned` method across all e
 
 | Model                  | total_mass | total_calories | total_fat | total_carb | total_protein | **average_wMAPE** |
 | :--------------------- | :--------- | :------------- | :-------- | :--------- | :------------ | :---------------- |
-| **efficientnet_b0**    | **23.1%**  | **20.2%**      | **28.9%** | **37.7%**  | **25.2%**     | **27.0%**         |
-| mobilenet_v3_large     | 25.0%      | 20.8%          | 29.8%     | 41.5%      | 26.2%         | 28.7%             |
-| mobilenet_v3_small     | 28.2%      | 24.3%          | 34.3%     | 46.1%      | 32.1%         | 33.0%             |
-| tf_efficientnet_lite4  | 30.5%      | 24.9%          | 37.1%     | 45.4%      | 33.1%         | 34.2%             |
-| mobilenetv4_conv_small | 32.5%      | 29.8%          | 38.0%     | 45.9%      | 35.5%         | 36.3%             |
-| mobilenetv4_conv_large | 35.8%      | 33.4%          | 41.0%     | 50.2%      | 38.6%         | 39.8%             |
+| **efficientnet_b0**    | **22.5%**  | **20.8%**      | **28.1%** | **35.9%**  | **24.5%**     | **26.4%**         |
+| mobilenet_v3_large     | 23.9%      | 21.5%          | 29.5%     | 38.6%      | 25.1%         | 27.7%             |
+| mobilenet_v3_small     | 27.8%      | 25.4%          | 33.9%     | 42.1%      | 30.8%         | 32.0%             |
+| tf_efficientnet_lite4  | 28.5%      | 25.8%          | 35.2%     | 43.1%      | 31.9%         | 32.9%             |
+| mobilenetv4_conv_small | 31.1%      | 30.2%          | 37.7%     | 44.2%      | 34.6%         | 35.6%             |
+| mobilenetv4_conv_large | 33.9%      | 34.1%          | 40.2%     | 48.8%      | 37.1%         | 38.8%             |
 
 *Lower wMAPE is better.*
 
 ## Conclusion
 
-Based on the evaluation, the **`efficientnet_b0`** model is the clear winner, demonstrating the lowest average error across all nutritional metrics. It provides the best balance of size and accuracy for this specific task.
+After a full evaluation on the 30-sample test set, **`efficientnet_b0`** remains the best performing model with a final average wMAPE of **26.4%**.
+
+It consistently outperforms the other models, including the newer MobileNetV4 and EfficientNet-Lite architectures. This suggests it has the best architecture for generalizing to the test data for this specific task. `mobilenet_v3_large` is a close second.
 
 ---
 
