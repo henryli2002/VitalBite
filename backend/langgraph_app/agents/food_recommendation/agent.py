@@ -1,7 +1,7 @@
 """Food recommendation agent for restaurant and food suggestions."""
 
 from typing import Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import asyncio
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
@@ -185,7 +185,7 @@ You are WABI, an expert food recommendation assistant.
             return {
                 "recommendation_result": {"restaurants": []},
                 "messages": [AIMessage(content=error_msg)],
-                "message_timestamps": [datetime.utcnow().isoformat()],
+                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
 
         # Step 3: Format recommendations into a structured object
@@ -264,7 +264,7 @@ Transform raw restaurant data into helpful, personalized suggestions.
                 else {},
             },
             "messages": [AIMessage(content=markdown_response)],
-            "message_timestamps": [datetime.utcnow().isoformat()],
+            "message_timestamps": [datetime.now(timezone.utc).isoformat()],
         }
 
     except Exception as e:
@@ -276,5 +276,5 @@ Transform raw restaurant data into helpful, personalized suggestions.
         return {
             "recommendation_result": None,
             "messages": [AIMessage(content=error_msg)],
-            "message_timestamps": [datetime.utcnow().isoformat()],
+            "message_timestamps": [datetime.now(timezone.utc).isoformat()],
         }

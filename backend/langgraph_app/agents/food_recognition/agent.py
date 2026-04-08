@@ -10,7 +10,7 @@ import asyncio
 import base64
 import os
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
 import redis.asyncio as redis
@@ -29,6 +29,16 @@ from .predictor import extract_image_bytes, predict_nutrition
 from .schemas import FoodDetection
 
 logger = get_logger(__name__)
+
+# Module-level Redis singleton for publishing thinking updates
+_redis_client: Optional[redis.Redis] = None
+
+def _get_redis() -> redis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
+        _redis_client = redis.from_url(url, decode_responses=True)
+    return _redis_client
 
 
 async def _send_thinking_update(
@@ -67,14 +77,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
     client = get_llm_client(module="food_recognition")
     lang = get_dominant_language(messages)
 
-    redis_client: Optional[redis.Redis] = None
-    if response_channel:
-        try:
-            redis_url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
-            redis_client = redis.from_url(redis_url, decode_responses=True)
-        except Exception as e:
-            logger.warning(f"[recognition] Failed to connect to Redis: {e}")
-            redis_client = None
+    redis_client = _get_redis() if response_channel else None
 
     try:
         step_metrics = []
@@ -114,7 +117,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                         else "No valid image found."
                     )
                 ],
-                "message_timestamps": [datetime.utcnow().isoformat()],
+                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
 
         # --- Step 2: Object Detection via LLM ---
@@ -271,7 +274,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                         else f"Sorry, error: {e}"
                     )
                 ],
-                "message_timestamps": [datetime.utcnow().isoformat()],
+                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
 
         step_time = time.time() - step_start
@@ -353,7 +356,7 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
             return {
                 "recognition_result": recognition_result,
                 "messages": [ai_message],
-                "message_timestamps": [datetime.utcnow().isoformat()],
+                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
         except Exception as e:
             logger.error(f"Step 4 (LLM summary) failed: {e}")
@@ -366,8 +369,7 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
                         else f"Sorry, error: {e}"
                     )
                 ],
-                "message_timestamps": [datetime.utcnow().isoformat()],
+                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
     finally:
-        if redis_client:
-            await redis_client.aclose()
+        pass  # Redis client is a module-level singleton, do not close

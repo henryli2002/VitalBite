@@ -11,7 +11,7 @@ from langgraph_app.utils.logger import get_logger
 from langgraph_app.utils.utils import (
     get_dominant_language,
 )
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 
 logger = get_logger(__name__)
@@ -85,4 +85,4 @@ Help the user define and achieve actionable dietary goals based on their history
 
     msg: AnyMessage = ai_message  # type: ignore
 
-    return {"messages": [msg], "message_timestamps": [datetime.utcnow().isoformat()]}
+    return {"messages": [msg], "message_timestamps": [datetime.now(timezone.utc).isoformat()]}
