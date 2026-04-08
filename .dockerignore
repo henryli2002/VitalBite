@@ -29,5 +29,6 @@ Thumbs.db
 
 # Data & Logs
 data/
-./logs/
+logs/
 .langgraph/
+

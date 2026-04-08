@@ -48,13 +48,13 @@ Thumbs.db
 *.log
 
 
-# images
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-*.svg
+# # images
+# *.png
+# *.jpg
+# *.jpeg
+# *.gif
+# *.bmp
+# *.svg
 
 #langgraph_api
 .langgraph_api/
