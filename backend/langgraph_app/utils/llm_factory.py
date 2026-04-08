@@ -30,7 +30,7 @@ def _get_dynamic_env_context() -> str:
         # Use timezone-aware datetime for UTC+8 (China Standard Time)
         utc_now = datetime.datetime.now(datetime.timezone.utc)
         cst_now = utc_now.astimezone(datetime.timezone(datetime.timedelta(hours=8)))
-        formatted_time = cst_now.strftime('%Y-%m-%dT%H:%M:%S UTC+8')
+        formatted_time = cst_now.strftime("%Y-%m-%dT%H:%M:%S UTC+8")
     except Exception:
         # Fallback in case of any issue
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -54,11 +54,11 @@ def inject_dynamic_context(messages: list) -> list:
             msg.copy(deep=True) if isinstance(msg, BaseMessage) else msg.copy()
             for msg in messages
         ]
-    except (AttributeError, TypeError): # pragma: no cover
+    except (AttributeError, TypeError):  # pragma: no cover
         # Fallback for older LangChain versions or unexpected types
         import copy
-        messages_copy = copy.deepcopy(messages)
 
+        messages_copy = copy.deepcopy(messages)
 
     last_message = messages_copy[-1]
     dynamic_context = _get_dynamic_env_context()
@@ -74,7 +74,7 @@ def inject_dynamic_context(messages: list) -> list:
             last_message.content = f"{dynamic_context}\\n\\n{original_content}"
         # If content is a list (e.g., for vision), we might need a more complex strategy,
         # but for now, we'll only handle the string case.
-        
+
     elif is_user_dict:
         original_content = last_message.get("content", "")
         if isinstance(original_content, str):
@@ -83,8 +83,11 @@ def inject_dynamic_context(messages: list) -> list:
     return messages_copy
 
 
-
-def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = None, module: Optional[str] = None) -> BaseChatModel:
+def get_llm_client(
+    provider: Optional[str] = None,
+    model_name: Optional[str] = None,
+    module: Optional[str] = None,
+) -> BaseChatModel:
     """
     Return a standard LangChain Chat Model instance based on provider/config.
     Results are cached by (provider, model, module) to reuse TCP connections.
@@ -99,6 +102,8 @@ def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = N
         resolved_model = model_name or config.OPENAI_MODEL_NAME
     elif selected in {"bedrock", "bedrock_claude", "claude"}:
         resolved_model = model_name or config.BEDROCK_CLAUDE_MODEL_NAME
+    elif selected == "llamacpp":
+        resolved_model = model_name or config.LLAMACPP_MODEL_NAME
     else:
         resolved_model = model_name or "unknown"
 
@@ -111,30 +116,57 @@ def get_llm_client(provider: Optional[str] = None, model_name: Optional[str] = N
     common_params: Dict[str, Any] = {
         "temperature": sampling_params.get("temperature", 0.7),
         "streaming": True,
-        "model_kwargs": {}
+        "model_kwargs": {},
     }
     if "top_p" in sampling_params:
         if selected in {"openai"}:
             common_params["model_kwargs"]["top_p"] = sampling_params["top_p"]
-            
+        elif selected == "llamacpp":
+            pass  # top_p handled in extra_body below
+
     if selected == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
+
         client = ChatGoogleGenerativeAI(model=resolved_model, **common_params)
-        
+
     elif selected == "openai":
         from langchain_openai import ChatOpenAI
+
         if "presence_penalty" in sampling_params:
-            common_params["model_kwargs"]["presence_penalty"] = sampling_params["presence_penalty"]
+            common_params["model_kwargs"]["presence_penalty"] = sampling_params[
+                "presence_penalty"
+            ]
         client = ChatOpenAI(model=resolved_model, **common_params)
-        
+
     elif selected in {"bedrock", "bedrock_claude", "claude"}:
         from langchain_aws import ChatBedrockConverse
+
         region = os.getenv("AWS_REGION") or "us-east-1"
         client = ChatBedrockConverse(
             model=resolved_model,
             region_name=region,
             max_tokens=config.BEDROCK_CLAUDE_MAX_TOKENS,
-            **common_params
+            **common_params,
+        )
+    elif selected == "llamacpp":
+        from langchain_openai import ChatOpenAI
+
+        extra_body_params = {}
+        for key in [
+            "top_p",
+            "top_k",
+            "min_p",
+            "repeat_penalty",
+            "reasoning_budget",
+            "reasoning_level",
+        ]:
+            if key in sampling_params:
+                extra_body_params[key] = sampling_params.pop(key)
+        client = ChatOpenAI(
+            model=resolved_model,
+            base_url=config.LLAMACPP_API_BASE,
+            extra_body=extra_body_params if extra_body_params else None,
+            **common_params,
         )
     else:
         raise ValueError(f"Unsupported LLM provider: {selected}")
