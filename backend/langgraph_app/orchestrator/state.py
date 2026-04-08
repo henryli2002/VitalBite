@@ -18,7 +18,7 @@ def _add_logs(left: List[dict], right: List[dict]) -> List[dict]:
 
 class AnalysisData(TypedDict, total=False):
     """Analysis results from guardrail and routing."""
-    intent: Literal["recognition", "recommendation", "chitchat", "tutorial", "guardrails", "goalplanning"]
+    intent: Literal["recognition", "recommendation", "chitchat", "guardrails", "goalplanning"]
     confidence: Optional[float]
     reasoning: Optional[str]
     safety_safe: bool
@@ -44,9 +44,12 @@ class GraphState(TypedDict, total=False):
     # User profile (age, height, weight, health conditions, etc.)
     user_profile: Optional[Dict[str, Any]]
     
-    # User context (location lat/lng, IP address, etc. sent from frontend)
+    # User context (location lat/lng, IP address, timezone, etc. sent from frontend)
     user_context: Optional[Dict[str, Any]]
     response_channel: Optional[str]
+
+    # Resolved meal time for the current request (set by router, read by recognition)
+    meal_time: Optional[str]  # "breakfast time" | "lunch time" | "dinner time" | "not meal time"
     
     # Analysis layer
     analysis: AnalysisData
@@ -71,6 +74,7 @@ class NodeOutput(TypedDict, total=False):
     session_id: str
     user_profile: Optional[Dict[str, Any]]
     analysis: AnalysisData
+    meal_time: Optional[str]
     recognition_result: Optional[dict]
     recommendation_result: Optional[dict]
     debug_logs: List[dict]

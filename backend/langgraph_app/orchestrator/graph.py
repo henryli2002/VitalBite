@@ -13,7 +13,6 @@ from langgraph_app.orchestrator.nodes.router import intent_router_node
 from langgraph_app.agents.food_recognition.agent import recognition_node
 from langgraph_app.agents.food_recommendation.agent import food_recommendation_node
 from langgraph_app.agents.chitchat.agent import chitchat_node
-from langgraph_app.agents.tutorial.agent import tutorial_node
 from langgraph_app.agents.goalplanning.agent import goalplanning_node
 
 
@@ -27,19 +26,12 @@ def should_continue(state: GraphState) -> Literal["unsafe", "safe"]:
 
 def route_by_intent(
     state: GraphState,
-) -> Literal["recognition", "recommendation", "chitchat", "tutorial", "goalplanning"]:
+) -> Literal["recognition", "recommendation", "chitchat", "goalplanning"]:
     """Condition function to route based on intent."""
     analysis = state.get("analysis", {})
     intent = analysis.get("intent", "chitchat")
 
-    # Fallback in case "guardrails" or other invalid intent somehow leaks through
-    if intent not in [
-        "recognition",
-        "recommendation",
-        "chitchat",
-        "tutorial",
-        "goalplanning",
-    ]:
+    if intent not in ["recognition", "recommendation", "chitchat", "goalplanning"]:
         return "chitchat"
 
     return intent  # type: ignore
@@ -55,7 +47,6 @@ def create_graph():  # type: ignore
     workflow.add_node("recognition", recognition_node)
     workflow.add_node("recommendation", food_recommendation_node)
     workflow.add_node("chitchat", chitchat_node)
-    workflow.add_node("tutorial", tutorial_node)
     workflow.add_node("goalplanning", goalplanning_node)
     workflow.add_node("output_guardrail", output_guardrail_node)
 
@@ -76,7 +67,6 @@ def create_graph():  # type: ignore
             "recognition": "recognition",
             "recommendation": "recommendation",
             "chitchat": "chitchat",
-            "tutorial": "tutorial",
             "goalplanning": "goalplanning",
         },
     )
@@ -84,7 +74,6 @@ def create_graph():  # type: ignore
     workflow.add_edge("recognition", "output_guardrail")
     workflow.add_edge("recommendation", "output_guardrail")
     workflow.add_edge("chitchat", "output_guardrail")
-    workflow.add_edge("tutorial", "output_guardrail")
     workflow.add_edge("goalplanning", "output_guardrail")
 
     # If output is unsafe, also short-circuit to END.

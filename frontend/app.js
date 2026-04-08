@@ -13,6 +13,7 @@ const state = {
     ws: null,
     pendingImage: null, // { base64, mimeType }
     userLocation: { lat: null, lng: null }, // Cached user geolocation
+    userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
     pendingAssistantMessageEl: null,
 };
 
@@ -314,6 +315,7 @@ async function sendMessage() {
         state.ws.send(
             JSON.stringify({
                 type: 'image',
+                timezone: state.userTimezone,
                 content: state.pendingImage.base64,
                 text: text,
                 mime_type: state.pendingImage.mimeType,
@@ -334,6 +336,7 @@ async function sendMessage() {
                 content: text,
                 lat: state.userLocation.lat,
                 lng: state.userLocation.lng,
+                timezone: state.userTimezone,
             })
         );
         appendMessage('user', text, now);
@@ -774,19 +777,15 @@ const MACRO_COLORS = {
 
 /**
  * Determines the current meal type (Breakfast, Lunch, Dinner) based on
- * the current time in GMT+8 timezone.
+ * the browser's local time (respects the user's actual timezone).
  */
-// 新增 isZh 参数
 function getCurrentMealType(isZh = true) {
-    const now = new Date();
-    const utcHours = now.getUTCHours();
-    const gmt8Hours = (utcHours + 8) % 24;
-
-    if (gmt8Hours >= 5 && gmt8Hours < 11) {
+    const localHours = new Date().getHours();
+    if (localHours >= 5 && localHours < 11) {
         return isZh ? '早餐' : 'Breakfast';
-    } else if (gmt8Hours >= 11 && gmt8Hours < 17) {
+    } else if (localHours >= 11 && localHours < 17) {
         return isZh ? '午餐' : 'Lunch';
-    } else if (gmt8Hours >= 17 && gmt8Hours < 22) {
+    } else if (localHours >= 17 && localHours < 22) {
         return isZh ? '晚餐' : 'Dinner';
     } else {
         return isZh ? '正餐' : 'Meal';

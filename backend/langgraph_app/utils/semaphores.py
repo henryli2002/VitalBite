@@ -21,7 +21,6 @@ _SEMAPHORE_LIMITS: Dict[str, int] = {
     "chitchat":        200,   # Flash-lite text, ~1s/req
     "recommendation":   100,   # LLM + Google Maps API + LLM, moderate
     "recognition":      50,    # HEAVY: Vision + FAISS. Lowered to 50 for 3GB RAM safety (~2-4MB base64 per req)
-    "tutorial":         100,   # Medium-weight text LLM
     "goalplanning":     100,   # Needs full history pull, high memory per req
     "fndds":            16,    # Thread pool backpressure for FAISS CPU retrieval (4 cores -> 4 workers + 12 queue slots)
 }

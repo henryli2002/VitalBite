@@ -88,6 +88,14 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                 if v
             )
 
+        # --- Meal Context (set by router) ---
+        meal_time = state.get("meal_time") or "not meal time"
+        meal_context = (
+            f"\n\n[MEAL CONTEXT]\nThis food is being consumed at {meal_time}."
+            if meal_time != "not meal time"
+            else ""
+        )
+
         # --- Step 1: Extract image ---
         await _send_thinking_update(
             redis_client, response_channel, "Step 1/4: Preparing image"
@@ -299,7 +307,7 @@ You are WABI, an expert nutrition assistant.
 [OBJECTIVE]
 Summarize the user's meal with an item-by-item breakdown and total, based strictly on the [NUTRITION BREAKDOWN DATA].
 
-[CONTEXT]{profile_context}
+[CONTEXT]{profile_context}{meal_context}
 
 [CONSTRAINTS]
 1. IDENTIFY: Greet the user and identify the foods detected (e.g., "I see a burger and fries...").
@@ -308,6 +316,7 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
 4. ACCURACY: Report the exact numbers from the data. Do not recalculate or modify them.
 5. PERSONALIZATION: Explicitly evaluate the meal against the 'User Profile'. Call out allergies or goals.
 6. LANGUAGE: The response MUST be entirely in '{lang}'.
+7. MEAL FIT: If [MEAL CONTEXT] is present, add one sentence after the table assessing whether the total caloric load is appropriate for {meal_time} (breakfast ~25-30%, lunch ~35-40%, dinner ~30-35% of typical daily needs). Skip this constraint if meal context is absent.
 
 [REQUIRED TABLE FORMAT]
 | 项目 (Item) | 重量 (Mass) | 热量 (Calories) | 脂肪 (Fat) | 碳水 (Carbs) | 蛋白质 (Protein) |

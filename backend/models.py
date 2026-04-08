@@ -48,6 +48,7 @@ class WSIncoming(BaseModel):
     mime_type: str = Field("image/jpeg", description="MIME type for image uploads")
     lat: Optional[float] = Field(None, description="User's current latitude")
     lng: Optional[float] = Field(None, description="User's current longitude")
+    timezone: Optional[str] = Field(None, description="User's IANA timezone (e.g. 'Asia/Singapore')")
 
 
 class WSOutgoing(BaseModel):

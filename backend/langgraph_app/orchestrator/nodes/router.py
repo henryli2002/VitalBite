@@ -8,7 +8,6 @@ from langgraph_app.utils.logger import get_logger
 from pydantic import BaseModel
 from langchain_core.messages import SystemMessage
 
-import time
 import re
 import asyncio
 import json
@@ -22,7 +21,7 @@ class IntentAnalysis(BaseModel):
     """Structured output for intent routing."""
 
     intent: Literal[
-        "recognition", "recommendation", "chitchat", "tutorial", "goalplanning"
+        "recognition", "recommendation", "chitchat", "goalplanning"
     ]
     confidence: float
     reasoning: str
@@ -57,7 +56,7 @@ def _parse_intent_output(raw_text: str) -> Optional[IntentAnalysis]:
     intent = _extract_field(raw_text, "INTENT").lower()
     confidence_str = _extract_field(raw_text, "CONFIDENCE")
     reasoning = _extract_field(raw_text, "REASONING")
-    allowed = {"recognition", "recommendation", "chitchat", "tutorial", "goalplanning"}
+    allowed = {"recognition", "recommendation", "chitchat", "goalplanning"}
     if intent not in allowed:
         return None
     try:
@@ -80,8 +79,32 @@ async def intent_router_node(state: GraphState) -> NodeOutput:
     messages = state.get("messages", [])
     response_channel = state.get("response_channel")
 
-    current_hour = time.localtime().tm_hour
-    current_minute = time.localtime().tm_min
+    from datetime import datetime, timezone, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        ZoneInfo = None
+
+    # Resolve user timezone: frontend-provided first, then IP fallback, then UTC+8
+    user_context = state.get("user_context") or {}
+    tz_name = user_context.get("timezone")
+    if not tz_name:
+        user_ip = user_context.get("user_ip")
+        if user_ip:
+            from langgraph_app.tools.map.ip_location import get_timezone_from_ip_async
+            try:
+                tz_name = await get_timezone_from_ip_async(user_ip)
+            except Exception:
+                pass
+
+    try:
+        user_tz = ZoneInfo(tz_name) if (ZoneInfo and tz_name) else timezone(timedelta(hours=8))
+    except Exception:
+        user_tz = timezone(timedelta(hours=8))
+
+    _now_local = datetime.now(user_tz)
+    current_hour = _now_local.hour
+    current_minute = _now_local.minute
     current_time = current_hour + current_minute / 60.0
     if 7 <= current_time < 9.5:
         meal_time = "breakfast time"
@@ -114,13 +137,12 @@ Current Time: {current_hour}:{current_minute:02d} ({meal_time}){profile_context}
 [INTENT RULES]
 1. "recognition": Goal is to identify food/nutrition from an image. If a food image is present, confidence for this intent should be VERY HIGH (>0.9).
 2. "recommendation": Finding places to eat. Triggers on explicit requests or implicit signs of hunger during meal times.
-3. "goalplanning": Diet planning, habit building, and long-term nutrition goals.
-4. "tutorial": User needs help, asks for image recognition without an image, provides vague inputs ("I want this" without context), or inputs meaningless noise.
-5. "chitchat": Default. Greetings, unrelated topics, or non-food/blurry images.
+3. "goalplanning": Diet planning, habit building, long-term nutrition goals, or questions about eating history and patterns.
+4. "chitchat": Default for everything else — greetings, unrelated topics, non-food/blurry images, vague inputs without context, requests for image recognition without an attached image, or meaningless noise.
 
 [CONSTRAINTS]
 Output with EXACTLY this plain-text format (no markdown, no code block, no extra labels):
-INTENT: <recognition|recommendation|chitchat|tutorial|goalplanning>
+INTENT: <recognition|recommendation|chitchat|goalplanning>
 CONFIDENCE: <0.00-1.00>
 REASONING: <brief but specific why this intent fits the user message>"""
 
@@ -219,6 +241,7 @@ REASONING: <brief but specific why this intent fits the user message>"""
                     "safety_safe": True,
                     "safety_reason": None,
                 },
+                "meal_time": meal_time,
                 "debug_logs": [
                     {
                         "node": "router",
@@ -249,5 +272,6 @@ REASONING: <brief but specific why this intent fits the user message>"""
             "safety_safe": True,
             "safety_reason": None,
         },
+        "meal_time": meal_time,
         "debug_logs": [{"node": "router", "status": "error", "error": str(last_error)}],
     }

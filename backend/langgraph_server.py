@@ -136,44 +136,6 @@ async def process_task(payload: Dict[str, Any]):
 
         result = accumulated_state
 
-        analysis = result.get("analysis", {})
-        detected_intent = analysis.get("intent", "chitchat")
-
-        # If intent is goalplanning and we have full history provided, re-invoke
-        if (
-            detected_intent == "goalplanning"
-            and payload.get("invoke_full_history")
-            and payload.get("full_messages")
-        ):
-            logger.info(
-                f"[{user_id}] Goalplanning detected in Queue. Reprocessing with FULL history."
-            )
-            full_msgs = build_langchain_messages(payload.get("full_messages", []))
-            full_state = {
-                "messages": full_msgs,
-                "session_id": payload.get("session_id", ""),
-                "user_id": user_id,
-                "user_name": payload.get("user_name"),
-                "user_profile": payload.get("user_profile"),
-                "user_context": payload.get("user_context", {}),
-                "response_channel": response_channel,
-            }
-            full_config = {"configurable": {"thread_id": f"{thread_id}_full"}}
-
-            accumulated_state = full_state.copy()
-            async for output in graph.astream(full_state, config=full_config):
-                for node_name, node_output in output.items():
-                    logger.info(f"[{user_id}] Goalplanning Node completed: {node_name}")
-                    accumulated_state.update(node_output)
-                    if response_channel:
-                        partial_payload = build_thinking_partial(node_name, node_output)
-                        if partial_payload:
-                            await redis_client.publish(
-                                response_channel, json.dumps(partial_payload)
-                            )
-
-            result = accumulated_state
-
         # Extract final AI response (safe null-check)
         final_msg = "No response generated."
         result_messages = result.get("messages", [])

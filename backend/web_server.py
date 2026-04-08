@@ -181,6 +181,7 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                     "lat": incoming.lat,
                     "lng": incoming.lng,
                     "user_ip": client_ip,
+                    "timezone": incoming.timezone,
                 }
 
                 # Process through chat manager which invokes AI microservice

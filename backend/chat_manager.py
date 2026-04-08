@@ -69,31 +69,36 @@ class HistoryStore(ABC):
 # Time boundary helpers
 # ---------------------------------------------------------------------------
 
-# Singapore / Taipei timezone (UTC+8)
+# Fallback timezone: Singapore / Taipei (UTC+8)
 _TZ_UTC8 = timezone(timedelta(hours=8))
 _DAY_START_HOUR = 3  # 3 AM as new-day boundary
 
 
-def _get_day_boundary() -> str:
-    """Return the most recent 3:00 AM in UTC+8 as an ISO timestamp (in UTC).
+def _get_day_boundary(tz_name: Optional[str] = None) -> str:
+    """Return the most recent 3:00 AM in the user's timezone as a UTC ISO timestamp.
 
-    If current UTC+8 time is before 3 AM, the boundary is yesterday 3 AM.
+    Falls back to UTC+8 if no timezone is provided or the name is invalid.
     """
-    now_utc8 = datetime.now(_TZ_UTC8)
+    user_tz = _TZ_UTC8
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            user_tz = ZoneInfo(tz_name)
+        except Exception:
+            pass
 
-    if now_utc8.hour < _DAY_START_HOUR:
-        # Before 3 AM — boundary is yesterday 3 AM
-        boundary_utc8 = now_utc8.replace(
+    now_local = datetime.now(user_tz)
+
+    if now_local.hour < _DAY_START_HOUR:
+        boundary_local = now_local.replace(
             hour=_DAY_START_HOUR, minute=0, second=0, microsecond=0
         ) - timedelta(days=1)
     else:
-        # At or after 3 AM — boundary is today 3 AM
-        boundary_utc8 = now_utc8.replace(
+        boundary_local = now_local.replace(
             hour=_DAY_START_HOUR, minute=0, second=0, microsecond=0
         )
 
-    # Convert to UTC for DB comparison (timestamps are stored as UTC)
-    boundary_utc = boundary_utc8.astimezone(timezone.utc)
+    boundary_utc = boundary_local.astimezone(timezone.utc)
     return boundary_utc.isoformat()
 
 
@@ -189,7 +194,7 @@ class ChatManager:
         user_name = user_info.get("name") if user_info else None
 
         # --- Phase 1: Quick intent detection with today's history ---
-        day_boundary = _get_day_boundary()
+        day_boundary = _get_day_boundary((user_context or {}).get("timezone"))
         load_method = getattr(self.store, "load_history_since", None)
         if load_method:
             today_history = await load_method(user_id, day_boundary)
@@ -218,8 +223,6 @@ class ChatManager:
             "user_name": user_name,
             "user_profile": user_profile if user_profile else None,
             "thread_id": invocation_id,
-            "invoke_full_history": False,
-            "full_messages": None,
             "response_channel": f"response_{invocation_id}",
             "user_context": user_context or {},
         }
@@ -277,29 +280,30 @@ class ChatManager:
                     phase_1_done = True
                     break
             
-            # Goal planning secondary pipeline
+            # Goal planning: re-run with full history for complete context
             if phase_1_done and detected_intent == "goalplanning":
-                logger.info(f"[{user_id}] Intent is goalplanning. Pushing Phase 2 job to queue with FULL history.")
+                logger.info(f"[{user_id}] Intent is goalplanning. Pushing Phase 2 job with FULL history.")
                 full_history = await self.store.load_history(user_id)
-                import json
                 for msg in full_history:
                     try:
                         if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
                             msg["content"] = json.loads(msg["content"])
                     except Exception:
                         pass
-                payload["invoke_full_history"] = True
-                payload["full_messages"] = full_history
-                payload["thread_id"] = f"{user_id}_full_{int(time.time() * 1000)}"
-                
-                await redis_client.rpush("wabi_ai_queue", json.dumps(payload))
-                
+
+                full_payload = {
+                    **payload,
+                    "messages": full_history,
+                    "thread_id": f"{user_id}_full_{int(time.time() * 1000)}",
+                }
+                await redis_client.rpush("wabi_ai_queue", json.dumps(full_payload))
+
                 start_wait = time.time()
                 while time.time() - start_wait < 120.0:
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if message and message.get('type') == 'message':
                         data = json.loads(message['data'])
-                        
+
                         if data.get("status") == "partial":
                             yield {
                                 "type": "thinking",
@@ -308,13 +312,12 @@ class ChatManager:
                             }
                             continue
 
-                        # Error check (same as Phase 1)
                         if isinstance(data, dict) and data.get("status") == "error":
                             error_msg = data.get("message", "Unknown Backend Crash")
                             logger.error(f"Intercepted backend crash (Phase 2) for user {user_id}: {error_msg}")
                             ai_text = f"🔴 fatal error (Goalplanning): {error_msg}"
                             break
-                        # Parse nested message format (same as Phase 1)
+
                         p2_messages = data.get("messages", [])
                         if p2_messages and isinstance(p2_messages, list):
                             ai_text = p2_messages[-1].get("content", ai_text)

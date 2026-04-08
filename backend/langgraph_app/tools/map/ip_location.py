@@ -9,7 +9,7 @@ This version uses httpx.AsyncClient + Redis cache (TTL 1 hour, since server IP r
 import os
 import json
 import hashlib
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 import httpx
 import redis.asyncio as redis
 from langgraph_app.utils.logger import get_logger
@@ -21,6 +21,7 @@ _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 # In-process cache (since server IP essentially never changes during a container lifecycle)
 _ip_location_cache: Optional[Tuple[float, float]] = None
+_ip_timezone_cache: Dict[str, str] = {}  # ip -> IANA timezone string
 
 
 async def get_location_from_ip_async(ip_address: Optional[str] = None) -> Optional[Tuple[float, float]]:
@@ -78,6 +79,49 @@ async def get_location_from_ip_async(ip_address: Optional[str] = None) -> Option
                 return result
     except Exception as e:
         logger.warning(f"Failed to get location from IP {ip_address} (async): {e}")
+    return None
+
+
+async def get_timezone_from_ip_async(ip_address: str) -> Optional[str]:
+    """Get IANA timezone string from an IP address.
+
+    Uses in-process cache → Redis cache (24h TTL) → live ip-api.com call.
+    Returns None for local/loopback addresses or on failure.
+    """
+    if not ip_address or ip_address in ("127.0.0.1", "localhost", "0.0.0.0"):
+        return None
+
+    if ip_address in _ip_timezone_cache:
+        return _ip_timezone_cache[ip_address]
+
+    cache_key = f"wabi_cache:ip_timezone:{ip_address}"
+    try:
+        cached = await _redis_client.get(cache_key)
+        if cached:
+            _ip_timezone_cache[ip_address] = cached
+            return cached
+    except Exception as e:
+        logger.warning(f"Redis timezone cache read failed: {e}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"http://ip-api.com/json/{ip_address}", timeout=5.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get("status") == "success" and data.get("timezone"):
+                tz = data["timezone"]
+                _ip_timezone_cache[ip_address] = tz
+                try:
+                    await _redis_client.setex(cache_key, 86400, tz)
+                except Exception:
+                    pass
+                logger.info(f"IP timezone fetched live ({ip_address}): {tz}")
+                return tz
+    except Exception as e:
+        logger.warning(f"Failed to get timezone from IP {ip_address}: {e}")
+
     return None
 
 
