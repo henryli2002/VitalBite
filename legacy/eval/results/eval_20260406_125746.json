@@ -1,0 +1,94 @@
+{
+  "meta": {
+    "timestamp": "20260406_125746",
+    "provider": "default",
+    "seed": 42,
+    "n_requested": 2,
+    "n_evaluated": 2,
+    "n_valid": 2
+  },
+  "wmape": {
+    "graph": {
+      "total_mass": 0.674209,
+      "total_calories": 0.580492,
+      "total_fat": 0.473254,
+      "total_carb": 0.479858,
+      "total_protein": 0.423226
+    },
+    "direct": {
+      "total_mass": 0.614449,
+      "total_calories": 0.524033,
+      "total_fat": 0.361848,
+      "total_carb": 0.168619,
+      "total_protein": 0.336513
+    }
+  },
+  "timing": {
+    "avg_graph_s": 12.43,
+    "avg_direct_s": 2.97
+  },
+  "records": [
+    {
+      "dish_id": "dish_1563478751",
+      "ground_truth": {
+        "total_mass": 950.395081,
+        "total_calories": 545.0,
+        "total_fat": 45.303986,
+        "total_carb": 54.133282,
+        "total_protein": 74.772202
+      },
+      "graph": {
+        "total_mass": 251.5,
+        "total_calories": 284.65,
+        "total_fat": 13.2,
+        "total_carb": 20.09,
+        "total_protein": 21.12
+      },
+      "direct": {
+        "total_mass": 350.0,
+        "total_calories": 650.0,
+        "total_fat": 25.0,
+        "total_carb": 70.0,
+        "total_protein": 35.0
+      },
+      "graph_foods": [
+        "Penne pasta",
+        "Meat chunks",
+        "Spinach"
+      ],
+      "graph_time_s": 15.11,
+      "direct_time_s": 4.38
+    },
+    {
+      "dish_id": "dish_1566328961",
+      "ground_truth": {
+        "total_mass": 605.81781,
+        "total_calories": 308.0,
+        "total_fat": 24.900572,
+        "total_carb": 39.994911,
+        "total_protein": 52.083549
+      },
+      "graph": {
+        "total_mass": 255.5,
+        "total_calories": 542.81,
+        "total_fat": 23.78,
+        "total_carb": 28.87,
+        "total_protein": 52.12
+      },
+      "direct": {
+        "total_mass": 250.0,
+        "total_calories": 650.0,
+        "total_fat": 30.0,
+        "total_carb": 40.0,
+        "total_protein": 55.0
+      },
+      "graph_foods": [
+        "pizza",
+        "steak",
+        "chicken"
+      ],
+      "graph_time_s": 9.76,
+      "direct_time_s": 1.56
+    }
+  ]
+}

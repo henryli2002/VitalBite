@@ -1,0 +1,1470 @@
+{
+  "meta": {
+    "timestamp": "20260407_022026",
+    "llm_model": "gemini-2.5-flash-lite",
+    "llm_provider": "gemini",
+    "cnn_model": "mobilenet_v3_large",
+    "seed": 42,
+    "n_evaluated": 20,
+    "fewshot_refs": [
+      "dish_1558639949",
+      "dish_1561062237",
+      "dish_1564514906",
+      "dish_1562945332",
+      "dish_1566851222"
+    ],
+    "num_fewshot_examples": 5
+  },
+  "wmape": {
+    "graph": {
+      "total_mass": 1.0,
+      "total_calories": 1.0,
+      "total_fat": 1.0,
+      "total_carb": 1.0,
+      "total_protein": 1.0
+    },
+    "direct": {
+      "total_mass": 0.495457,
+      "total_calories": 0.573377,
+      "total_fat": 0.329886,
+      "total_carb": 0.287468,
+      "total_protein": 0.375971
+    },
+    "fewshot": {
+      "total_mass": 0.773116,
+      "total_calories": 0.798873,
+      "total_fat": 0.869628,
+      "total_carb": 0.452536,
+      "total_protein": 0.919166
+    },
+    "finetuned": {
+      "total_mass": 0.151225,
+      "total_calories": 0.141689,
+      "total_fat": 0.17933,
+      "total_carb": 0.192634,
+      "total_protein": 0.211369
+    }
+  },
+  "records": [
+    {
+      "dish_id": "dish_1563478751",
+      "ground_truth": {
+        "total_mass": 950.395081,
+        "total_calories": 545.0,
+        "total_fat": 45.303986,
+        "total_carb": 54.133282,
+        "total_protein": 74.772202
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 5.4,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 450.0,
+        "total_calories": 750.0,
+        "total_fat": 35.0,
+        "total_carb": 70.0,
+        "total_protein": 40.0
+      },
+      "direct_ape": {
+        "total_mass": 0.526513,
+        "total_calories": 0.376147,
+        "total_fat": 0.227441,
+        "total_carb": 0.293105,
+        "total_protein": 0.465042
+      },
+      "direct_time_s": 3.06,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 80.0,
+        "total_fat": 0.5,
+        "total_carb": 18.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.894781,
+        "total_calories": 0.853211,
+        "total_fat": 0.988963,
+        "total_carb": 0.667487,
+        "total_protein": 0.986626
+      },
+      "fewshot_time_s": 2.8,
+      "finetuned": {
+        "total_mass": 773.68,
+        "total_calories": 457.36,
+        "total_fat": 49.28,
+        "total_carb": 34.46,
+        "total_protein": 59.57
+      },
+      "finetuned_ape": {
+        "total_mass": 0.185939,
+        "total_calories": 0.160807,
+        "total_fat": 0.087763,
+        "total_carb": 0.363423,
+        "total_protein": 0.203314
+      },
+      "finetuned_time_s": 1.03
+    },
+    {
+      "dish_id": "dish_1566328961",
+      "ground_truth": {
+        "total_mass": 605.81781,
+        "total_calories": 308.0,
+        "total_fat": 24.900572,
+        "total_carb": 39.994911,
+        "total_protein": 52.083549
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.51,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 250.0,
+        "total_calories": 650.0,
+        "total_fat": 30.0,
+        "total_carb": 40.0,
+        "total_protein": 55.0
+      },
+      "direct_ape": {
+        "total_mass": 0.587335,
+        "total_calories": 1.11039,
+        "total_fat": 0.204792,
+        "total_carb": 0.000127,
+        "total_protein": 0.055996
+      },
+      "direct_time_s": 1.76,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 75.0,
+        "total_fat": 0.5,
+        "total_carb": 15.0,
+        "total_protein": 2.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.834934,
+        "total_calories": 0.756494,
+        "total_fat": 0.97992,
+        "total_carb": 0.624952,
+        "total_protein": 0.9616
+      },
+      "fewshot_time_s": 2.14,
+      "finetuned": {
+        "total_mass": 501.75,
+        "total_calories": 257.83,
+        "total_fat": 21.78,
+        "total_carb": 31.76,
+        "total_protein": 43.32
+      },
+      "finetuned_ape": {
+        "total_mass": 0.171781,
+        "total_calories": 0.16289,
+        "total_fat": 0.125321,
+        "total_carb": 0.205899,
+        "total_protein": 0.168259
+      },
+      "finetuned_time_s": 0.04
+    },
+    {
+      "dish_id": "dish_1565724552",
+      "ground_truth": {
+        "total_mass": 108.80024,
+        "total_calories": 298.0,
+        "total_fat": 4.671976,
+        "total_carb": 15.722977,
+        "total_protein": 4.621049
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 5.39,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 200.0,
+        "total_calories": 100.0,
+        "total_fat": 5.0,
+        "total_carb": 10.0,
+        "total_protein": 5.0
+      },
+      "direct_ape": {
+        "total_mass": 0.838231,
+        "total_calories": 0.66443,
+        "total_fat": 0.070211,
+        "total_carb": 0.363988,
+        "total_protein": 0.082005
+      },
+      "direct_time_s": 1.19,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 50.0,
+        "total_fat": 0.2,
+        "total_carb": 12.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.080884,
+        "total_calories": 0.832215,
+        "total_fat": 0.957192,
+        "total_carb": 0.236786,
+        "total_protein": 0.783599
+      },
+      "fewshot_time_s": 2.58,
+      "finetuned": {
+        "total_mass": 103.46,
+        "total_calories": 230.59,
+        "total_fat": 4.47,
+        "total_carb": 13.12,
+        "total_protein": 5.92
+      },
+      "finetuned_ape": {
+        "total_mass": 0.049083,
+        "total_calories": 0.226208,
+        "total_fat": 0.043231,
+        "total_carb": 0.165552,
+        "total_protein": 0.281094
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1566402197",
+      "ground_truth": {
+        "total_mass": 480.946136,
+        "total_calories": 736.0,
+        "total_fat": 8.78768,
+        "total_carb": 47.151623,
+        "total_protein": 47.279602
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.56,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 450.0,
+        "total_calories": 350.0,
+        "total_fat": 15.0,
+        "total_carb": 40.0,
+        "total_protein": 15.0
+      },
+      "direct_ape": {
+        "total_mass": 0.064344,
+        "total_calories": 0.524457,
+        "total_fat": 0.706935,
+        "total_carb": 0.151673,
+        "total_protein": 0.682738
+      },
+      "direct_time_s": 1.53,
+      "fewshot": {
+        "total_mass": 75.0,
+        "total_calories": 45.0,
+        "total_fat": 0.2,
+        "total_carb": 10.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.844057,
+        "total_calories": 0.938859,
+        "total_fat": 0.977241,
+        "total_carb": 0.787918,
+        "total_protein": 0.978849
+      },
+      "fewshot_time_s": 2.65,
+      "finetuned": {
+        "total_mass": 432.33,
+        "total_calories": 615.59,
+        "total_fat": 12.39,
+        "total_carb": 42.56,
+        "total_protein": 37.3
+      },
+      "finetuned_ape": {
+        "total_mass": 0.101084,
+        "total_calories": 0.163601,
+        "total_fat": 0.409928,
+        "total_carb": 0.09738,
+        "total_protein": 0.211076
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1562602589",
+      "ground_truth": {
+        "total_mass": 365.276001,
+        "total_calories": 106.0,
+        "total_fat": 28.938,
+        "total_carb": 4.452,
+        "total_protein": 20.458
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.08,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 450.0,
+        "total_fat": 40.0,
+        "total_carb": 5.0,
+        "total_protein": 20.0
+      },
+      "direct_ape": {
+        "total_mass": 0.589352,
+        "total_calories": 3.245283,
+        "total_fat": 0.382266,
+        "total_carb": 0.123091,
+        "total_protein": 0.022387
+      },
+      "direct_time_s": 1.7,
+      "fewshot": {
+        "total_mass": 75.0,
+        "total_calories": 250.0,
+        "total_fat": 20.0,
+        "total_carb": 2.0,
+        "total_protein": 15.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.794676,
+        "total_calories": 1.358491,
+        "total_fat": 0.308867,
+        "total_carb": 0.550764,
+        "total_protein": 0.26679
+      },
+      "fewshot_time_s": 2.98,
+      "finetuned": {
+        "total_mass": 384.47,
+        "total_calories": 106.55,
+        "total_fat": 29.38,
+        "total_carb": 11.71,
+        "total_protein": 20.16
+      },
+      "finetuned_ape": {
+        "total_mass": 0.052547,
+        "total_calories": 0.005189,
+        "total_fat": 0.015274,
+        "total_carb": 1.630279,
+        "total_protein": 0.014566
+      },
+      "finetuned_time_s": 0.03
+    },
+    {
+      "dish_id": "dish_1562008936",
+      "ground_truth": {
+        "total_mass": 57.639999,
+        "total_calories": 131.0,
+        "total_fat": 2.751,
+        "total_carb": 5.633,
+        "total_protein": 4.192
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.37,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 250.0,
+        "total_fat": 18.0,
+        "total_carb": 10.0,
+        "total_protein": 8.0
+      },
+      "direct_ape": {
+        "total_mass": 1.60236,
+        "total_calories": 0.908397,
+        "total_fat": 5.543075,
+        "total_carb": 0.775253,
+        "total_protein": 0.908397
+      },
+      "direct_time_s": 1.91,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 50.0,
+        "total_fat": 0.2,
+        "total_carb": 12.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.734906,
+        "total_calories": 0.618321,
+        "total_fat": 0.927299,
+        "total_carb": 1.130304,
+        "total_protein": 0.76145
+      },
+      "fewshot_time_s": 3.17,
+      "finetuned": {
+        "total_mass": 55.72,
+        "total_calories": 96.9,
+        "total_fat": 2.27,
+        "total_carb": 6.9,
+        "total_protein": 3.9
+      },
+      "finetuned_ape": {
+        "total_mass": 0.03331,
+        "total_calories": 0.260305,
+        "total_fat": 0.174846,
+        "total_carb": 0.224925,
+        "total_protein": 0.069656
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1559243887",
+      "ground_truth": {
+        "total_mass": 289.050018,
+        "total_calories": 50.0,
+        "total_fat": 24.75,
+        "total_carb": 11.35,
+        "total_protein": 11.200001
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 3.24,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 30.0,
+        "total_calories": 170.0,
+        "total_fat": 15.0,
+        "total_carb": 6.0,
+        "total_protein": 6.0
+      },
+      "direct_ape": {
+        "total_mass": 0.896212,
+        "total_calories": 2.4,
+        "total_fat": 0.393939,
+        "total_carb": 0.471366,
+        "total_protein": 0.464286
+      },
+      "direct_time_s": 2.3,
+      "fewshot": {
+        "total_mass": 30.0,
+        "total_calories": 170.0,
+        "total_fat": 15.0,
+        "total_carb": 6.0,
+        "total_protein": 6.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.896212,
+        "total_calories": 2.4,
+        "total_fat": 0.393939,
+        "total_carb": 0.471366,
+        "total_protein": 0.464286
+      },
+      "fewshot_time_s": 2.29,
+      "finetuned": {
+        "total_mass": 211.97,
+        "total_calories": 41.14,
+        "total_fat": 16.55,
+        "total_carb": 7.97,
+        "total_protein": 10.35
+      },
+      "finetuned_ape": {
+        "total_mass": 0.266667,
+        "total_calories": 0.1772,
+        "total_fat": 0.331313,
+        "total_carb": 0.297797,
+        "total_protein": 0.075893
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1562775110",
+      "ground_truth": {
+        "total_mass": 101.520004,
+        "total_calories": 282.0,
+        "total_fat": 0.282,
+        "total_carb": 25.380001,
+        "total_protein": 1.41
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.27,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 250.0,
+        "total_calories": 100.0,
+        "total_fat": 0.5,
+        "total_carb": 25.0,
+        "total_protein": 1.5
+      },
+      "direct_ape": {
+        "total_mass": 1.462569,
+        "total_calories": 0.64539,
+        "total_fat": 0.77305,
+        "total_carb": 0.014972,
+        "total_protein": 0.06383
+      },
+      "direct_time_s": 1.35,
+      "fewshot": {
+        "total_mass": 150.0,
+        "total_calories": 100.0,
+        "total_fat": 0.5,
+        "total_carb": 25.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.477541,
+        "total_calories": 0.64539,
+        "total_fat": 0.77305,
+        "total_carb": 0.014972,
+        "total_protein": 0.29078
+      },
+      "fewshot_time_s": 7.2,
+      "finetuned": {
+        "total_mass": 174.5,
+        "total_calories": 246.74,
+        "total_fat": 5.78,
+        "total_carb": 23.98,
+        "total_protein": 10.29
+      },
+      "finetuned_ape": {
+        "total_mass": 0.718873,
+        "total_calories": 0.125035,
+        "total_fat": 19.496454,
+        "total_carb": 0.055162,
+        "total_protein": 6.297872
+      },
+      "finetuned_time_s": 0.01
+    },
+    {
+      "dish_id": "dish_1565207694",
+      "ground_truth": {
+        "total_mass": 173.791214,
+        "total_calories": 178.0,
+        "total_fat": 12.895247,
+        "total_carb": 15.58964,
+        "total_protein": 15.633135
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 5.93,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 250.0,
+        "total_fat": 10.0,
+        "total_carb": 15.0,
+        "total_protein": 25.0
+      },
+      "direct_ape": {
+        "total_mass": 0.136895,
+        "total_calories": 0.404494,
+        "total_fat": 0.22452,
+        "total_carb": 0.037823,
+        "total_protein": 0.599167
+      },
+      "direct_time_s": 1.79,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 80.0,
+        "total_fat": 1.0,
+        "total_carb": 15.0,
+        "total_protein": 2.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.424597,
+        "total_calories": 0.550562,
+        "total_fat": 0.922452,
+        "total_carb": 0.037823,
+        "total_protein": 0.872067
+      },
+      "fewshot_time_s": 2.09,
+      "finetuned": {
+        "total_mass": 260.86,
+        "total_calories": 191.06,
+        "total_fat": 15.03,
+        "total_carb": 10.06,
+        "total_protein": 26.73
+      },
+      "finetuned_ape": {
+        "total_mass": 0.500996,
+        "total_calories": 0.073371,
+        "total_fat": 0.165546,
+        "total_carb": 0.3547,
+        "total_protein": 0.70983
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1560801041",
+      "ground_truth": {
+        "total_mass": 432.244263,
+        "total_calories": 292.0,
+        "total_fat": 10.663426,
+        "total_carb": 63.245892,
+        "total_protein": 25.670122
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.38,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 350.0,
+        "total_calories": 550.0,
+        "total_fat": 25.0,
+        "total_carb": 40.0,
+        "total_protein": 45.0
+      },
+      "direct_ape": {
+        "total_mass": 0.190273,
+        "total_calories": 0.883562,
+        "total_fat": 1.344462,
+        "total_carb": 0.367548,
+        "total_protein": 0.753011
+      },
+      "direct_time_s": 2.04,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 60.0,
+        "total_fat": 0.2,
+        "total_carb": 15.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.768649,
+        "total_calories": 0.794521,
+        "total_fat": 0.981244,
+        "total_carb": 0.76283,
+        "total_protein": 0.961044
+      },
+      "fewshot_time_s": 2.67,
+      "finetuned": {
+        "total_mass": 458.72,
+        "total_calories": 317.58,
+        "total_fat": 16.58,
+        "total_carb": 55.91,
+        "total_protein": 22.89
+      },
+      "finetuned_ape": {
+        "total_mass": 0.061252,
+        "total_calories": 0.087603,
+        "total_fat": 0.554847,
+        "total_carb": 0.11599,
+        "total_protein": 0.108302
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1565207865",
+      "ground_truth": {
+        "total_mass": 112.960785,
+        "total_calories": 129.0,
+        "total_fat": 5.843282,
+        "total_carb": 13.839738,
+        "total_protein": 4.252189
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 3.56,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 200.0,
+        "total_fat": 10.0,
+        "total_carb": 20.0,
+        "total_protein": 10.0
+      },
+      "direct_ape": {
+        "total_mass": 0.327894,
+        "total_calories": 0.550388,
+        "total_fat": 0.711367,
+        "total_carb": 0.445114,
+        "total_protein": 1.35173
+      },
+      "direct_time_s": 5.06,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 70.0,
+        "total_fat": 0.5,
+        "total_carb": 15.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.114737,
+        "total_calories": 0.457364,
+        "total_fat": 0.914432,
+        "total_carb": 0.083836,
+        "total_protein": 0.764827
+      },
+      "fewshot_time_s": 4.55,
+      "finetuned": {
+        "total_mass": 116.04,
+        "total_calories": 191.6,
+        "total_fat": 6.69,
+        "total_carb": 10.84,
+        "total_protein": 8.9
+      },
+      "finetuned_ape": {
+        "total_mass": 0.027259,
+        "total_calories": 0.485271,
+        "total_fat": 0.144905,
+        "total_carb": 0.216748,
+        "total_protein": 1.09304
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1558635400",
+      "ground_truth": {
+        "total_mass": 25.0,
+        "total_calories": 100.0,
+        "total_fat": 0.3,
+        "total_carb": 5.0,
+        "total_protein": 1.8
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 3.21,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 38.0,
+        "total_fat": 0.4,
+        "total_carb": 7.0,
+        "total_protein": 3.0
+      },
+      "direct_ape": {
+        "total_mass": 5.0,
+        "total_calories": 0.62,
+        "total_fat": 0.333333,
+        "total_carb": 0.4,
+        "total_protein": 0.666667
+      },
+      "direct_time_s": 2.63,
+      "fewshot": {
+        "total_mass": 50.0,
+        "total_calories": 50.0,
+        "total_fat": 0.2,
+        "total_carb": 10.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 1.0,
+        "total_calories": 0.5,
+        "total_fat": 0.333333,
+        "total_carb": 1.0,
+        "total_protein": 0.444444
+      },
+      "fewshot_time_s": 3.15,
+      "finetuned": {
+        "total_mass": 0.0,
+        "total_calories": 45.12,
+        "total_fat": 0.0,
+        "total_carb": 1.42,
+        "total_protein": 0.65
+      },
+      "finetuned_ape": {
+        "total_mass": 1.0,
+        "total_calories": 0.5488,
+        "total_fat": 1.0,
+        "total_carb": 0.716,
+        "total_protein": 0.638889
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1558638137",
+      "ground_truth": {
+        "total_mass": 60.839996,
+        "total_calories": 117.0,
+        "total_fat": 0.234,
+        "total_carb": 16.379999,
+        "total_protein": 0.351
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 3.39,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 77.0,
+        "total_fat": 0.3,
+        "total_carb": 21.0,
+        "total_protein": 0.4
+      },
+      "direct_ape": {
+        "total_mass": 1.465483,
+        "total_calories": 0.34188,
+        "total_fat": 0.282051,
+        "total_carb": 0.282051,
+        "total_protein": 0.139601
+      },
+      "direct_time_s": 1.5,
+      "fewshot": {
+        "total_mass": 150.0,
+        "total_calories": 78.0,
+        "total_fat": 0.3,
+        "total_carb": 19.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 1.465483,
+        "total_calories": 0.333333,
+        "total_fat": 0.282051,
+        "total_carb": 0.159951,
+        "total_protein": 1.849003
+      },
+      "fewshot_time_s": 3.85,
+      "finetuned": {
+        "total_mass": 59.61,
+        "total_calories": 122.08,
+        "total_fat": 0.0,
+        "total_carb": 17.3,
+        "total_protein": 0.29
+      },
+      "finetuned_ape": {
+        "total_mass": 0.020217,
+        "total_calories": 0.043419,
+        "total_fat": 1.0,
+        "total_carb": 0.056166,
+        "total_protein": 0.173789
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1561654392",
+      "ground_truth": {
+        "total_mass": 494.065491,
+        "total_calories": 282.0,
+        "total_fat": 35.081356,
+        "total_carb": 13.55521,
+        "total_protein": 30.914278
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.54,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 250.0,
+        "total_calories": 450.0,
+        "total_fat": 35.0,
+        "total_carb": 5.0,
+        "total_protein": 30.0
+      },
+      "direct_ape": {
+        "total_mass": 0.493994,
+        "total_calories": 0.595745,
+        "total_fat": 0.002319,
+        "total_carb": 0.631138,
+        "total_protein": 0.029575
+      },
+      "direct_time_s": 1.88,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 60.0,
+        "total_fat": 0.2,
+        "total_carb": 15.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.797598,
+        "total_calories": 0.787234,
+        "total_fat": 0.994299,
+        "total_carb": 0.106586,
+        "total_protein": 0.967652
+      },
+      "fewshot_time_s": 3.56,
+      "finetuned": {
+        "total_mass": 445.39,
+        "total_calories": 260.58,
+        "total_fat": 29.65,
+        "total_carb": 24.05,
+        "total_protein": 22.71
+      },
+      "finetuned_ape": {
+        "total_mass": 0.09852,
+        "total_calories": 0.075957,
+        "total_fat": 0.154822,
+        "total_carb": 0.774226,
+        "total_protein": 0.265388
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1566414723",
+      "ground_truth": {
+        "total_mass": 728.810608,
+        "total_calories": 482.0,
+        "total_fat": 31.699219,
+        "total_carb": 24.867764,
+        "total_protein": 97.962776
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.94,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 350.0,
+        "total_calories": 650.0,
+        "total_fat": 30.0,
+        "total_carb": 40.0,
+        "total_protein": 55.0
+      },
+      "direct_ape": {
+        "total_mass": 0.519765,
+        "total_calories": 0.348548,
+        "total_fat": 0.053604,
+        "total_carb": 0.608508,
+        "total_protein": 0.438562
+      },
+      "direct_time_s": 1.7,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 60.0,
+        "total_fat": 0.2,
+        "total_carb": 15.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.86279,
+        "total_calories": 0.875519,
+        "total_fat": 0.993691,
+        "total_carb": 0.396809,
+        "total_protein": 0.989792
+      },
+      "fewshot_time_s": 3.02,
+      "finetuned": {
+        "total_mass": 642.35,
+        "total_calories": 472.82,
+        "total_fat": 25.45,
+        "total_carb": 25.0,
+        "total_protein": 79.79
+      },
+      "finetuned_ape": {
+        "total_mass": 0.118632,
+        "total_calories": 0.019046,
+        "total_fat": 0.197141,
+        "total_carb": 0.005318,
+        "total_protein": 0.185507
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1566501324",
+      "ground_truth": {
+        "total_mass": 65.269997,
+        "total_calories": 113.0,
+        "total_fat": 2.926,
+        "total_carb": 10.038,
+        "total_protein": 1.051
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 5.12,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 75.0,
+        "total_fat": 0.5,
+        "total_carb": 17.0,
+        "total_protein": 1.5
+      },
+      "direct_ape": {
+        "total_mass": 1.298146,
+        "total_calories": 0.336283,
+        "total_fat": 0.829118,
+        "total_carb": 0.693564,
+        "total_protein": 0.427212
+      },
+      "direct_time_s": 1.53,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 41.0,
+        "total_fat": 0.2,
+        "total_carb": 9.6,
+        "total_protein": 0.9
+      },
+      "fewshot_ape": {
+        "total_mass": 0.532098,
+        "total_calories": 0.637168,
+        "total_fat": 0.931647,
+        "total_carb": 0.043634,
+        "total_protein": 0.143673
+      },
+      "fewshot_time_s": 2.75,
+      "finetuned": {
+        "total_mass": 79.05,
+        "total_calories": 108.19,
+        "total_fat": 3.96,
+        "total_carb": 11.22,
+        "total_protein": 1.39
+      },
+      "finetuned_ape": {
+        "total_mass": 0.211123,
+        "total_calories": 0.042566,
+        "total_fat": 0.353383,
+        "total_carb": 0.117753,
+        "total_protein": 0.32255
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1562702469",
+      "ground_truth": {
+        "total_mass": 541.730286,
+        "total_calories": 529.0,
+        "total_fat": 28.22797,
+        "total_carb": 32.923893,
+        "total_protein": 39.216187
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 4.83,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 350.0,
+        "total_calories": 550.0,
+        "total_fat": 25.0,
+        "total_carb": 35.0,
+        "total_protein": 45.0
+      },
+      "direct_ape": {
+        "total_mass": 0.353922,
+        "total_calories": 0.039698,
+        "total_fat": 0.114354,
+        "total_carb": 0.063058,
+        "total_protein": 0.147485
+      },
+      "direct_time_s": 1.22,
+      "fewshot": {
+        "total_mass": 150.0,
+        "total_calories": 120.0,
+        "total_fat": 1.0,
+        "total_carb": 25.0,
+        "total_protein": 3.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.723109,
+        "total_calories": 0.773157,
+        "total_fat": 0.964574,
+        "total_carb": 0.240673,
+        "total_protein": 0.923501
+      },
+      "fewshot_time_s": 3.09,
+      "finetuned": {
+        "total_mass": 485.53,
+        "total_calories": 448.67,
+        "total_fat": 27.96,
+        "total_carb": 31.29,
+        "total_protein": 38.87
+      },
+      "finetuned_ape": {
+        "total_mass": 0.103742,
+        "total_calories": 0.151853,
+        "total_fat": 0.009493,
+        "total_carb": 0.049626,
+        "total_protein": 0.008828
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1563564707",
+      "ground_truth": {
+        "total_mass": 143.991699,
+        "total_calories": 150.0,
+        "total_fat": 4.091075,
+        "total_carb": 24.55752,
+        "total_protein": 6.571747
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 3.86,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 150.0,
+        "total_calories": 180.0,
+        "total_fat": 8.0,
+        "total_carb": 20.0,
+        "total_protein": 7.0
+      },
+      "direct_ape": {
+        "total_mass": 0.041727,
+        "total_calories": 0.2,
+        "total_fat": 0.955476,
+        "total_carb": 0.185586,
+        "total_protein": 0.065166
+      },
+      "direct_time_s": 1.46,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 60.0,
+        "total_fat": 0.2,
+        "total_carb": 15.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.305516,
+        "total_calories": 0.6,
+        "total_fat": 0.951113,
+        "total_carb": 0.389189,
+        "total_protein": 0.847833
+      },
+      "fewshot_time_s": 4.12,
+      "finetuned": {
+        "total_mass": 128.52,
+        "total_calories": 145.05,
+        "total_fat": 5.22,
+        "total_carb": 19.95,
+        "total_protein": 4.89
+      },
+      "finetuned_ape": {
+        "total_mass": 0.107449,
+        "total_calories": 0.033,
+        "total_fat": 0.275948,
+        "total_carb": 0.187622,
+        "total_protein": 0.255906
+      },
+      "finetuned_time_s": 0.01
+    },
+    {
+      "dish_id": "dish_1562614952",
+      "ground_truth": {
+        "total_mass": 548.106018,
+        "total_calories": 403.0,
+        "total_fat": 28.563108,
+        "total_carb": 18.39809,
+        "total_protein": 54.80373
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 3.71,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 250.0,
+        "total_calories": 450.0,
+        "total_fat": 25.0,
+        "total_carb": 15.0,
+        "total_protein": 40.0
+      },
+      "direct_ape": {
+        "total_mass": 0.543884,
+        "total_calories": 0.116625,
+        "total_fat": 0.124745,
+        "total_carb": 0.184698,
+        "total_protein": 0.270123
+      },
+      "direct_time_s": 2.77,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 60.0,
+        "total_fat": 0.2,
+        "total_carb": 15.0,
+        "total_protein": 1.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.817554,
+        "total_calories": 0.851117,
+        "total_fat": 0.992998,
+        "total_carb": 0.184698,
+        "total_protein": 0.981753
+      },
+      "fewshot_time_s": 2.29,
+      "finetuned": {
+        "total_mass": 459.42,
+        "total_calories": 328.81,
+        "total_fat": 25.77,
+        "total_carb": 18.45,
+        "total_protein": 45.53
+      },
+      "finetuned_ape": {
+        "total_mass": 0.161804,
+        "total_calories": 0.184094,
+        "total_fat": 0.097787,
+        "total_carb": 0.002821,
+        "total_protein": 0.169217
+      },
+      "finetuned_time_s": 0.02
+    },
+    {
+      "dish_id": "dish_1568665012",
+      "ground_truth": {
+        "total_mass": 327.420563,
+        "total_calories": 268.0,
+        "total_fat": 15.353144,
+        "total_carb": 15.197391,
+        "total_protein": 32.789753
+      },
+      "graph": {
+        "total_mass": 0.0,
+        "total_calories": 0.0,
+        "total_fat": 0.0,
+        "total_carb": 0.0,
+        "total_protein": 0.0
+      },
+      "graph_ape": {
+        "total_mass": 1.0,
+        "total_calories": 1.0,
+        "total_fat": 1.0,
+        "total_carb": 1.0,
+        "total_protein": 1.0
+      },
+      "graph_time_s": 5.5,
+      "graph_foods": [],
+      "direct": {
+        "total_mass": 350.0,
+        "total_calories": 550.0,
+        "total_fat": 25.0,
+        "total_carb": 30.0,
+        "total_protein": 50.0
+      },
+      "direct_ape": {
+        "total_mass": 0.068962,
+        "total_calories": 1.052239,
+        "total_fat": 0.628331,
+        "total_carb": 0.974023,
+        "total_protein": 0.524867
+      },
+      "direct_time_s": 1.66,
+      "fewshot": {
+        "total_mass": 100.0,
+        "total_calories": 75.0,
+        "total_fat": 0.5,
+        "total_carb": 15.0,
+        "total_protein": 2.0
+      },
+      "fewshot_ape": {
+        "total_mass": 0.694582,
+        "total_calories": 0.720149,
+        "total_fat": 0.967433,
+        "total_carb": 0.012988,
+        "total_protein": 0.939005
+      },
+      "fewshot_time_s": 2.99,
+      "finetuned": {
+        "total_mass": 369.53,
+        "total_calories": 286.67,
+        "total_fat": 20.21,
+        "total_carb": 13.96,
+        "total_protein": 40.87
+      },
+      "finetuned_ape": {
+        "total_mass": 0.12861,
+        "total_calories": 0.069664,
+        "total_fat": 0.316343,
+        "total_carb": 0.081421,
+        "total_protein": 0.246426
+      },
+      "finetuned_time_s": 0.02
+    }
+  ]
+}

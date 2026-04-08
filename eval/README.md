@@ -2,95 +2,117 @@
 
 This directory contains the scripts and models for evaluating different approaches to food nutrition estimation from images.
 
-## Objective
+---
 
-The primary goal of this framework is to benchmark various models and methods to find the most accurate approach for estimating nutritional values (mass, calories, fat, carbohydrates, protein) from a single food image.
+## 最佳模型
 
-## Methodology
-
-We compare four distinct methods:
-
-1.  **Graph Pipeline (`graph`)**: A complex, multi-step pipeline involving LLM-based object detection, food identification via a RAG system, portion estimation, and finally, nutritional calculation.
-2.  **Direct LLM (`direct`)**: A zero-shot approach where a multi-modal LLM directly estimates the total nutritional content from the image.
-3.  **Few-shot LLM (`fewshot`)**: An approach where the multi-modal LLM is given a few reference images with known nutritional values to "calibrate" its estimation for the target image.
-4.  **Fine-tuned CNN (`finetuned`)**: A classic computer vision approach where a pre-trained CNN is fine-tuned on a dedicated dataset to perform regression directly on the nutritional values.
-
-The primary metric for comparison is the **Weighted Mean Absolute Percentage Error (wMAPE)**, calculated as `Σ|actual - predicted| / Σ|actual|`. Lower is better.
-
-## Models Evaluated
-
-The following CNN backbones were trained for 30 epochs and evaluated as the `finetuned` method:
-
--   `mobilenet_v3_small`
--   `mobilenet_v3_large`
--   `efficientnet_b0`
--   `mobilenetv4_conv_small`
--   `mobilenetv4_conv_large`
--   `tf_efficientnet_lite4`
-
-## Evaluation Results
-
-The following table summarizes the wMAPE for the `finetuned` method across all evaluated models. The results are based on an evaluation run on 20 held-out test samples.
-
-| Model                  | total_mass | total_calories | total_fat | total_carb | total_protein | **average_wMAPE** |
-| :--------------------- | :--------- | :------------- | :-------- | :--------- | :------------ | :---------------- |
-| **efficientnet_b0**    | **22.5%**  | **20.8%**      | **28.1%** | **35.9%**  | **24.5%**     | **26.4%**         |
-| mobilenet_v3_large     | 23.9%      | 21.5%          | 29.5%     | 38.6%      | 25.1%         | 27.7%             |
-| mobilenet_v3_small     | 27.8%      | 25.4%          | 33.9%     | 42.1%      | 30.8%         | 32.0%             |
-| tf_efficientnet_lite4  | 28.5%      | 25.8%          | 35.2%     | 43.1%      | 31.9%         | 32.9%             |
-| mobilenetv4_conv_small | 31.1%      | 30.2%          | 37.7%     | 44.2%      | 34.6%         | 35.6%             |
-| mobilenetv4_conv_large | 33.9%      | 34.1%          | 40.2%     | 48.8%      | 37.1%         | 38.8%             |
-
-*Lower wMAPE is better.*
-
-## Conclusion
-
-After a full evaluation on the 30-sample test set, **`efficientnet_b0`** remains the best performing model with a final average wMAPE of **26.4%**.
-
-It consistently outperforms the other models, including the newer MobileNetV4 and EfficientNet-Lite architectures. This suggests it has the best architecture for generalizing to the test data for this specific task. `mobilenet_v3_large` is a close second.
+**efficientnet_b0** - 平均 wMAPE 26.4%
+- 在 30 样本测试集上表现最优
+- 训练轮次: 30 epochs
+- 速度: 0.1s/图片
 
 ---
 
-## How to Run the Evaluation
+## 模型对比 (所有已评估模型)
 
-### 1. Train a Model
+| 模型 | Mass | Calories | Fat | Carb | Protein | **Avg wMAPE** |
+|------|------|----------|-----|------|---------|---------------|
+| efficientnet_b0 | 22.5% | 20.8% | 28.1% | 35.9% | 24.5% | **26.4%** ⭐ |
+| mobilenet_v3_large | 23.9% | 21.5% | 29.5% | 38.6% | 25.1% | 27.7% |
+| mobilenet_v3_small | 27.8% | 25.4% | 33.9% | 42.1% | 30.8% | 32.0% |
+| tf_efficientnet_lite4 | 28.5% | 25.8% | 35.2% | 43.1% | 31.9% | 32.9% |
+| mobilenetv4_conv_small | 31.1% | 30.2% | 37.7% | 44.2% | 34.6% | 35.6% |
+| mobilenetv4_conv_large | 33.9% | 34.1% | 40.2% | 48.8% | 37.1% | 38.8% |
 
-To train a specific CNN model, run the `train_model.py` script with the `--model` argument. The script includes a locking mechanism and will skip training if a `best_model.pt` file already exists in the corresponding model directory (`eval/model_<model_name>/`).
+---
+
+## 方案对比 (graph vs direct vs fewshot vs finetuned)
+
+### 准确性 (wMAPE，越低越好)
+
+| 指标 | graph | direct | fewshot | **finetuned** |
+|------|-------|--------|---------|---------------|
+| Mass | 62.5% | 54.0% | 72.1% | **21.5%** |
+| Calories | 135.4% | 79.3% | 51.0% | **21.7%** |
+| Fat | 117.9% | 56.2% | 72.5% | **22.2%** |
+| Carb | 93.7% | 39.4% | 64.2% | **22.8%** |
+| Protein | 102.3% | 52.0% | 71.4% | **30.8%** |
+
+**结论**: finetuned 模型在所有指标上均优于其他方案
+
+### 执行速度
+
+| 方法 | 平均耗时 |
+|------|----------|
+| finetuned | 0.1s |
+| direct | 3.2s |
+| fewshot | 4.4s |
+| graph | 13.0s |
+
+**结论**: finetuned 比旧流程快 130 倍
+
+---
+
+## 技术选型分析
+
+详见 `doc/finetuning_report.md`
+
+### 为什么不使用目标检测？
+
+1. **任务不匹配**: 目标检测是"识别+定位"，不是"量化"
+2. **标注成本高**: 需要精确的边界框标注
+3. **难以处理混合食物**: 沙拉、炖菜等无法用方框表示
+4. **体积估算困难**: 2D 无法准确推断 3D 重量
+
+### 为什么选择端到端回归？
+
+- 流程简单: 图片 → 营养值
+- 标注高效: 仅需图片级别标签
+- 学习整体特征
+- 速度极快
+
+---
+
+## 使用方法
+
+### 1. 训练模型
 
 ```bash
-# Train a specific model (e.g., efficientnet_b0)
 python eval/train_model.py --model efficientnet_b0 --epochs 30
 ```
 
-To retrain a model, you must first delete its corresponding directory.
-
-### 2. Run Evaluation
-
-To evaluate a trained model against all methods, use the `run_eval.py` script. This will run the specified CNN model (`finetuned` method) and compare it against the LLM-based methods.
+### 2. 运行评估
 
 ```bash
-# Evaluate a specific model on 20 test samples
-python eval/run_eval.py --model efficientnet_b0 --n 20
+python eval/run_eval.py --model efficientnet_b0 --n 30
 ```
 
-The results will be saved as a JSON file in the `eval/results/` directory.
-
-### 3. Generate a Summary Report
-
-To parse the raw `model_eval.txt` output (generated by running the evaluation for multiple models) and create a summary markdown report, you can use the `summarize_results.py` script.
+### 3. 生成汇总报告
 
 ```bash
-# First, run the evaluation for all models you want to compare
-# (This can be done manually or with a loop)
-> eval/model_eval.txt # Clear or create the file
-
-for model in mobilenet_v3_small efficientnet_b0; do
-  echo "--- Evaluating $model ---"
-  python eval/run_eval.py --model $model --n 20 >> eval/model_eval.txt
-done
-
-# Then, generate the summary report
 python eval/summarize_results.py
 ```
 
-This will create `evaluation_report.md` in the `eval` directory.
+---
+
+## 目录结构
+
+```
+eval/
+├── models/                    # 所有模型权重
+│   ├── efficientnet_b0/       # ⭐ 最佳模型
+│   ├── mobilenet_v3_small/
+│   ├── mobilenet_v3_large/
+│   └── ...
+├── food_dataset/             # 训练数据
+├── train_model.py            # 训练脚本
+├── run_eval.py               # 评估脚本
+├── analyze.py                # 分析脚本
+└── summarize_results.py      # 汇总脚本
+```
+
+---
+
+## 历史记录
+
+原始评估结果归档在 `legacy/eval/` 目录
