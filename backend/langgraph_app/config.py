@@ -113,7 +113,7 @@ class Config:
     }
 
     # LLM Provider Selection: gemini | openai | bedrock_claude | llamacpp
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "llamacpp")
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
 
     # Llama.cpp Configuration
     LLAMACPP_API_BASE: str = os.getenv(
