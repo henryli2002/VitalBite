@@ -4,7 +4,8 @@ from typing import Dict, Any, List
 from langchain_core.messages import AIMessage, SystemMessage, AnyMessage
 from langgraph.types import interrupt
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
-from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.llm_callback import create_callback_handler
 from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.logger import get_logger
 from langgraph_app.utils.utils import (
@@ -24,7 +25,7 @@ async def chitchat_node(state: GraphState) -> NodeOutput:
     Generate a friendly response for general conversation.
     """
     messages = state.get("messages", [])
-    client = get_tracked_llm(module="chitchat", node_name="chitchat")
+    client = get_llm_client(module="chitchat")
 
     lang = get_dominant_language(messages)
 
@@ -58,7 +59,8 @@ Engage in general conversation, building rapport while naturally incorporating t
             messages_to_send = [SystemMessage(content=system_instruction)] + messages
             messages_to_send = inject_dynamic_context(messages_to_send)
             ai_message = await client.ainvoke(
-                messages_to_send, config={"tags": ["final_node_output"]}
+                messages_to_send,
+                config={"callbacks": [create_callback_handler("chitchat")], "tags": ["final_node_output"]},
             )
             break
         except Exception as e:

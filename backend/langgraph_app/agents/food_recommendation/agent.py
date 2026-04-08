@@ -5,7 +5,8 @@ from datetime import datetime
 import json
 import asyncio
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
-from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.llm_callback import create_callback_handler
 from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.logger import get_logger
 from pydantic import BaseModel, Field
@@ -80,9 +81,7 @@ async def food_recommendation_node(state: GraphState) -> NodeOutput:
     Provide restaurant and food recommendations based on user query.
     """
     messages = state.get("messages", [])
-    client = get_tracked_llm(
-        module="food_recommendation", node_name="food_recommendation"
-    )
+    client = get_llm_client(module="food_recommendation")
 
     lang = get_dominant_language(messages)
 
@@ -124,7 +123,7 @@ You are WABI, an expert food recommendation assistant.
 
                 query_params = await structured_llm.ainvoke(
                     inject_dynamic_context([SystemMessage(content=sys_content)] + local_messages),
-                    config={"callbacks": []},
+                    config={"callbacks": [create_callback_handler("food_recommendation_query")]},
                 )
                 break
             except Exception as e:
@@ -228,7 +227,7 @@ Transform raw restaurant data into helpful, personalized suggestions.
 
                 structured_response = await structured_llm_2.ainvoke(
                     inject_dynamic_context([SystemMessage(content=sys_content_2)] + local_messages_2),
-                    config={"tags": ["final_node_output"]},
+                    config={"callbacks": [create_callback_handler("food_recommendation")], "tags": ["final_node_output"]},
                 )
                 break
             except Exception as e:

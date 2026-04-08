@@ -15,10 +15,21 @@ import os
 from typing import Dict, List, Optional, Any
 
 import httpx
+import redis.asyncio as redis
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
 
 logger = logging.getLogger("wabi.chat")
+
+# Module-level Redis singleton — lazily initialised on first use
+_redis_client: Optional[redis.Redis] = None
+
+def _get_redis() -> redis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        url = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
+        _redis_client = redis.from_url(url, decode_responses=True)
+    return _redis_client
 
 
 # ---------------------------------------------------------------------------
@@ -230,11 +241,8 @@ class ChatManager:
         # Redis PubSub and Job Queue pattern
         try:
             import json
-            import redis.asyncio as redis
-            
-            wabi_redis_url = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
-            redis_client = redis.from_url(wabi_redis_url, decode_responses=True)
-            
+
+            redis_client = _get_redis()
             response_channel = payload["response_channel"]
             pubsub = redis_client.pubsub()
             await pubsub.subscribe(response_channel)
@@ -326,7 +334,6 @@ class ChatManager:
                         break
             
             await pubsub.unsubscribe(response_channel)
-            await redis_client.aclose()
 
         except Exception as e:
             logger.error(f"[{user_id}] Failed to dispatch AI message to Queue: {e}", exc_info=True)

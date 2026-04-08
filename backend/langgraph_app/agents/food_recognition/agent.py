@@ -19,7 +19,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, AnyM
 
 from langgraph_app.utils.logger import get_logger
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
-from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.llm_callback import create_callback_handler
 from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.utils import get_dominant_language
 from langgraph_app.utils.semaphores import with_semaphore
@@ -63,7 +64,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
     """
     messages = state.get("messages", [])
     response_channel = state.get("response_channel")
-    client = get_tracked_llm(module="food_recognition", node_name="food_recognition")
+    client = get_llm_client(module="food_recognition")
     lang = get_dominant_language(messages)
 
     redis_client: Optional[redis.Redis] = None
@@ -333,7 +334,8 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
             )
             messages_to_send = inject_dynamic_context(messages_to_send)
             ai_message = await client.ainvoke(
-                messages_to_send, config={"tags": ["final_node_output"]}
+                messages_to_send,
+                config={"callbacks": [create_callback_handler("food_recognition")], "tags": ["final_node_output"]},
             )
 
             step_time = time.time() - step_start

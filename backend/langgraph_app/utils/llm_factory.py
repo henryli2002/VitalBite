@@ -1,11 +1,8 @@
 """LLM client factory with singleton caching.
 
-Previously, every call to get_tracked_llm() → get_llm_client() created a brand new
-ChatGoogleGenerativeAI/ChatOpenAI instance. At 200 concurrency, this means 200
-TLS handshake negotiations happening simultaneously.
-
 LangChain Chat Model instances are thread-safe and reentrant for async calls.
-This module caches them by (provider, model_name, module) to reuse connections.
+This module caches them by (provider, model_name, module) so TLS connections
+are reused across requests rather than re-established per message.
 """
 
 from __future__ import annotations
@@ -71,14 +68,14 @@ def inject_dynamic_context(messages: list) -> list:
         # Ensure content is a string before concatenation
         original_content = last_message.content
         if isinstance(original_content, str):
-            last_message.content = f"{dynamic_context}\\n\\n{original_content}"
+            last_message.content = f"{dynamic_context}\n\n{original_content}"
         # If content is a list (e.g., for vision), we might need a more complex strategy,
         # but for now, we'll only handle the string case.
 
     elif is_user_dict:
         original_content = last_message.get("content", "")
         if isinstance(original_content, str):
-            last_message["content"] = f"{dynamic_context}\\n\\n{original_content}"
+            last_message["content"] = f"{dynamic_context}\n\n{original_content}"
 
     return messages_copy
 

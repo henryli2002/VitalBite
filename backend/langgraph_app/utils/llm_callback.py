@@ -70,7 +70,7 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
 
         log_trace(
             node_name=self.node_name,
-            provider="gemini",
+            provider=self._get_provider(response),
             model_name=self._get_model_name(response),
             latency_ms=latency_ms,
             input_tokens=input_tokens,
@@ -93,7 +93,7 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
 
         log_trace(
             node_name=self.node_name,
-            provider="gemini",
+            provider="unknown",
             model_name="unknown",
             latency_ms=latency_ms,
             status="error",
@@ -102,16 +102,23 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
         )
 
     def _get_model_name(self, response: LLMResult) -> str:
-        # Extract model name from ChatGeneration.message.response_metadata
         for generation in response.generations:
             for gen in generation:
                 if hasattr(gen, "message") and gen.message:
-                    msg = gen.message
-                    if hasattr(msg, "response_metadata"):
-                        meta = msg.response_metadata
-                        if isinstance(meta, dict):
-                            return meta.get("model_name", "unknown")
+                    meta = getattr(gen.message, "response_metadata", {}) or {}
+                    name = meta.get("model_name") or meta.get("model") or ""
+                    if name:
+                        return name
+        return "unknown"
 
+    def _get_provider(self, response: LLMResult) -> str:
+        model = self._get_model_name(response).lower()
+        if "gemini" in model:
+            return "gemini"
+        if "claude" in model or "bedrock" in model or "anthropic" in model:
+            return "claude"
+        if "gpt" in model or "openai" in model:
+            return "openai"
         return "unknown"
 
     def get_usage(self) -> Dict[str, Any]:

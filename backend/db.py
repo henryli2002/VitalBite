@@ -118,24 +118,27 @@ class PostgresHistoryStore(HistoryStore):
     async def list_users(self) -> List[Dict[str, Any]]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            users = await conn.fetch(
-                "SELECT * FROM users "
-                "WHERE user_id NOT LIKE 'loadtest_%' AND name != 'Test User' "
-                "ORDER BY last_active DESC"
+            rows = await conn.fetch(
+                """
+                SELECT u.user_id, u.name, u.created_at, u.last_active,
+                       COUNT(m.id) AS message_count
+                FROM users u
+                LEFT JOIN messages m ON m.user_id = u.user_id
+                WHERE u.user_id NOT LIKE 'loadtest_%' AND u.name != 'Test User'
+                GROUP BY u.user_id, u.name, u.created_at, u.last_active
+                ORDER BY u.last_active DESC
+                """
             )
-            result = []
-            for u in users:
-                u_dict = dict(u)
-                # Get message count
-                cnt = await conn.fetchval(
-                    "SELECT COUNT(*) FROM messages WHERE user_id = $1",
-                    u_dict["user_id"]
-                )
-                u_dict["message_count"] = cnt if cnt else 0
-                # Remove profile_json from listing
-                u_dict.pop("profile_json", None)
-                result.append(u_dict)
-            return result
+            return [
+                {
+                    "user_id": row["user_id"],
+                    "name": row["name"],
+                    "created_at": row["created_at"],
+                    "last_active": row["last_active"],
+                    "message_count": row["message_count"] or 0,
+                }
+                for row in rows
+            ]
 
     async def get_user(self, user_id: str) -> Dict[str, Any]:
         pool = await self._get_pool()

@@ -2,7 +2,8 @@
 
 from typing import Dict, Any, Literal, Optional
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
-from langgraph_app.utils.tracked_llm import get_tracked_llm
+from langgraph_app.utils.llm_factory import get_llm_client
+from langgraph_app.utils.llm_callback import create_callback_handler
 from langgraph_app.config import config
 from langgraph_app.utils.logger import get_logger
 from pydantic import BaseModel
@@ -13,6 +14,16 @@ import asyncio
 import json
 import os
 import redis.asyncio as redis
+
+# Module-level Redis singleton — reused across all requests
+_redis_client: redis.Redis = None  # type: ignore[assignment]
+
+def _get_redis() -> redis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
+        _redis_client = redis.from_url(url, decode_responses=True)
+    return _redis_client
 
 logger = get_logger(__name__)
 
@@ -75,7 +86,7 @@ async def intent_router_node(state: GraphState) -> NodeOutput:
     Route user input to appropriate agent based on intent.
     This router focuses only on the high-level user goal.
     """
-    client = get_tracked_llm(module="router", node_name="intent_router")
+    client = get_llm_client(module="router")
     messages = state.get("messages", [])
     response_channel = state.get("response_channel")
 
@@ -158,23 +169,18 @@ REASONING: <brief but specific why this intent fits the user message>"""
 
             streamed_text = ""
             last_published_reasoning = ""
-            redis_client = None
-            try:
-                if response_channel:
-                    redis_url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
-                    redis_client = redis.from_url(redis_url, decode_responses=True)
-            except Exception:
-                redis_client = None
+            pub_client = _get_redis() if response_channel else None
 
             async for chunk in client.astream(
-                messages_to_send, config={"callbacks": []}
+                messages_to_send,
+                config={"callbacks": [create_callback_handler("intent_router")]},
             ):
                 piece = _extract_text_from_chunk_content(getattr(chunk, "content", ""))
                 if not piece:
                     continue
                 streamed_text += piece
 
-                if redis_client and response_channel:
+                if pub_client and response_channel:
                     intent_so_far = _extract_field(streamed_text, "INTENT").lower()
                     confidence_so_far = _extract_field(streamed_text, "CONFIDENCE")
                     reasoning_so_far = _extract_field(streamed_text, "REASONING")
@@ -205,7 +211,7 @@ REASONING: <brief but specific why this intent fits the user message>"""
                             },
                         }
                         try:
-                            await redis_client.publish(
+                            await pub_client.publish(
                                 response_channel, json.dumps(partial_payload)
                             )
                             last_published_reasoning = reasoning_so_far
@@ -213,17 +219,7 @@ REASONING: <brief but specific why this intent fits the user message>"""
                             logger.warning(
                                 f"[router] Streaming publish failed, continue without partial stream: {publish_err}"
                             )
-                            try:
-                                await redis_client.aclose()
-                            except Exception:
-                                pass
-                            redis_client = None
-
-            if redis_client:
-                try:
-                    await redis_client.aclose()
-                except Exception:
-                    pass
+                            pub_client = None
 
             result = _parse_intent_output(streamed_text)
             if result is None:
