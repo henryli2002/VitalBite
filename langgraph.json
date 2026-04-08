@@ -1,7 +1,0 @@
-{
-  "dependencies": ["."],
-  "graphs": {
-    "agent": "langgraph_app.orchestrator.graph:graph"
-  },
-  "env": ".env"
-}

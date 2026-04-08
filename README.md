@@ -100,13 +100,24 @@ docker exec wabi-ai python3 scripts/build_vector_store.py
 
 ```text
 WABI/
-├── langgraph_app/       # LangGraph 核心逻辑
-├── langgraph_server.py  # AI Worker 入口 (Consumer)
-├── web_server.py        # FastAPI API 入口 (Producer)
-├── chat_manager.py      # 会话流控与 Redis 调度
-├── db.py                # PostgreSQL 存储适配层
-├── scripts/             # 运维与构建 (清理数据、向量库构建)
-└── static/              # 前端页面、音效与静态资源
+├── docker/                  # Docker 配置
+│   ├── Dockerfile.ai        # AI Worker 镜像
+│   └── Dockerfile.web       # Web 服务镜像
+├── backend/
+│   ├── langgraph_app/       # LangGraph 核心逻辑
+│   │   ├── agents/          # Agent 实现 (food_recognition, recommendation, goalplanning, etc.)
+│   │   ├── orchestrator/    # 工作流编排
+│   │   ├── tools/           # 工具集 (map, nutrition, vision)
+│   │   ├── utils/           # 工具函数
+│   │   └── config.py        # 配置管理
+│   ├── langgraph_server.py  # AI Worker 入口 (Consumer)
+│   ├── web_server.py        # FastAPI API 入口 (Producer)
+│   ├── chat_manager.py      # 会话流控与 Redis 调度
+│   ├── db.py                # PostgreSQL 存储适配层
+│   └── scripts/             # 运维脚本 (清理数据、向量库构建)
+├── frontend/                # 前端页面
+├── eval/                    # 模型评估框架
+└── tests/                   # 测试框架
 ```
 
 ---

@@ -2,7 +2,7 @@ services:
   wabi-web:
     build:
       context: .
-      dockerfile: backend/Dockerfile.web
+      dockerfile: docker/Dockerfile.web
     container_name: wabi-web
     ports:
       - "8000:8000"
@@ -37,7 +37,7 @@ services:
   wabi-ai:
     build:
       context: .
-      dockerfile: backend/Dockerfile.ai
+      dockerfile: docker/Dockerfile.ai
     container_name: wabi-ai
     ports:
       - "8001:8001"
