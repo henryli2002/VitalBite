@@ -252,41 +252,43 @@ class ChatManager:
             
             ai_text = "Sorry, I could not process your request."
             detected_intent = "chitchat"
-            
-            start_wait = time.time()
+
             phase_1_done = False
-            # Wait up to 120 seconds in queue
-            while time.time() - start_wait < 120.0:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                if message and message.get('type') == 'message':
-                    data = json.loads(message['data'])
-                    
-                    if data.get("status") == "partial":
-                        yield {
-                            "type": "thinking",
-                            "node": data.get("node"),
-                            "analysis": data.get("analysis", {})
-                        }
-                        continue
-                    
-                    # Check if it was a backend Node Crash
-                    if isinstance(data, dict) and data.get("status") == "error":
-                        error_msg = data.get("message", "Unknown Backend Crash")
-                        logger.error(f"Intercepted backend crash for user {user_id}: {error_msg}")
-                        ai_text = f"🔴 fatal error: {error_msg}"
+            try:
+                async with asyncio.timeout(120.0):
+                    async for message in pubsub.listen():
+                        if message.get('type') != 'message':
+                            continue
+                        data = json.loads(message['data'])
+
+                        if data.get("status") == "partial":
+                            yield {
+                                "type": "thinking",
+                                "node": data.get("node"),
+                                "analysis": data.get("analysis", {})
+                            }
+                            continue
+
+                        # Check if it was a backend Node Crash
+                        if isinstance(data, dict) and data.get("status") == "error":
+                            error_msg = data.get("message", "Unknown Backend Crash")
+                            logger.error(f"Intercepted backend crash for user {user_id}: {error_msg}")
+                            ai_text = f"🔴 fatal error: {error_msg}"
+                            phase_1_done = True
+                            break
+
+                        # Parse the new nested JSON payload from langgraph_server.py
+                        msgs = data.get("messages", [])
+                        if msgs and isinstance(msgs, list):
+                            ai_text = msgs[-1].get("content", ai_text)
+                        else:
+                            ai_text = data.get('ai_text', ai_text)
+
+                        detected_intent = data.get("analysis", {}).get("intent", data.get("detected_intent", detected_intent))
                         phase_1_done = True
                         break
-                    
-                    # Parse the new nested JSON payload from langgraph_server.py
-                    messages = data.get("messages", [])
-                    if messages and isinstance(messages, list):
-                        ai_text = messages[-1].get("content", ai_text)
-                    else:
-                        ai_text = data.get('ai_text', ai_text)
-                        
-                    detected_intent = data.get("analysis", {}).get("intent", data.get("detected_intent", detected_intent))
-                    phase_1_done = True
-                    break
+            except TimeoutError:
+                logger.warning(f"[{user_id}] Timed out waiting for Phase 1 response after 120s")
             
             # Goal planning: re-run with full history for complete context
             if phase_1_done and detected_intent == "goalplanning":
@@ -306,32 +308,35 @@ class ChatManager:
                 }
                 await redis_client.rpush("wabi_ai_queue", json.dumps(full_payload))
 
-                start_wait = time.time()
-                while time.time() - start_wait < 120.0:
-                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    if message and message.get('type') == 'message':
-                        data = json.loads(message['data'])
+                try:
+                    async with asyncio.timeout(120.0):
+                        async for message in pubsub.listen():
+                            if message.get('type') != 'message':
+                                continue
+                            data = json.loads(message['data'])
 
-                        if data.get("status") == "partial":
-                            yield {
-                                "type": "thinking",
-                                "node": data.get("node"),
-                                "analysis": data.get("analysis", {})
-                            }
-                            continue
+                            if data.get("status") == "partial":
+                                yield {
+                                    "type": "thinking",
+                                    "node": data.get("node"),
+                                    "analysis": data.get("analysis", {})
+                                }
+                                continue
 
-                        if isinstance(data, dict) and data.get("status") == "error":
-                            error_msg = data.get("message", "Unknown Backend Crash")
-                            logger.error(f"Intercepted backend crash (Phase 2) for user {user_id}: {error_msg}")
-                            ai_text = f"🔴 fatal error (Goalplanning): {error_msg}"
+                            if isinstance(data, dict) and data.get("status") == "error":
+                                error_msg = data.get("message", "Unknown Backend Crash")
+                                logger.error(f"Intercepted backend crash (Phase 2) for user {user_id}: {error_msg}")
+                                ai_text = f"🔴 fatal error (Goalplanning): {error_msg}"
+                                break
+
+                            p2_messages = data.get("messages", [])
+                            if p2_messages and isinstance(p2_messages, list):
+                                ai_text = p2_messages[-1].get("content", ai_text)
+                            else:
+                                ai_text = data.get('ai_text', ai_text)
                             break
-
-                        p2_messages = data.get("messages", [])
-                        if p2_messages and isinstance(p2_messages, list):
-                            ai_text = p2_messages[-1].get("content", ai_text)
-                        else:
-                            ai_text = data.get('ai_text', ai_text)
-                        break
+                except TimeoutError:
+                    logger.warning(f"[{user_id}] Timed out waiting for Phase 2 response after 120s")
             
             await pubsub.unsubscribe(response_channel)
 
