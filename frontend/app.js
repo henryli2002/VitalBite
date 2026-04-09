@@ -788,7 +788,7 @@ function getCurrentMealType(isZh = true) {
     } else if (localHours >= 17 && localHours < 22) {
         return isZh ? '晚餐' : 'Dinner';
     } else {
-        return isZh ? '正餐' : 'Meal';
+        return isZh ? '加餐' : 'Snack';
     }
 }
 

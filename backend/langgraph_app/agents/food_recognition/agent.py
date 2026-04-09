@@ -168,7 +168,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
         meal_context = (
             f"\n\n[MEAL CONTEXT]\nThis food is being consumed at {meal_time}."
             if meal_time != "not meal time"
-            else ""
+            else "\n\n[MEAL CONTEXT]\nThis food is being consumed outside main meal hours (likely a snack)."
         )
 
         # --- Step 1: Extract image ---
@@ -379,7 +379,7 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
 4. ACCURACY: Report the exact numbers from the data. Do not recalculate or modify them.
 5. PERSONALIZATION: Explicitly evaluate the meal against the 'User Profile'. Call out allergies or goals.
 6. LANGUAGE: The response MUST be entirely in '{lang}'.
-7. MEAL FIT: If [MEAL CONTEXT] is present, add one sentence after the table assessing whether the total caloric load is appropriate for {meal_time} (breakfast ~25-30%, lunch ~35-40%, dinner ~30-35% of typical daily needs). Skip this constraint if meal context is absent.
+7. MEAL FIT: Add one sentence after the table assessing whether the total caloric load is appropriate given the [MEAL CONTEXT]: breakfast ~25-30%, lunch ~35-40%, dinner ~30-35%, snack ~10-15% (~150-250 kcal) of typical daily needs (~2000 kcal).
 
 [REQUIRED TABLE FORMAT]
 | 项目 (Item) | 重量 (Mass) | 热量 (Calories) | 脂肪 (Fat) | 碳水 (Carbs) | 蛋白质 (Protein) |
