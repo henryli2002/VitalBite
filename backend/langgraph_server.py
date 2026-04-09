@@ -28,9 +28,9 @@ logging.basicConfig(level=logging.INFO)
 from langgraph_app.config import config as _app_config
 redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 
-# Strict concurrency limit to prevent API throttling
-MAX_CONCURRENT_WORKERS = 200
-WORKER_TASKS = []
+# Track the dispatcher task for health reporting
+_active_tasks: set[asyncio.Task] = set()
+_dispatcher_task: asyncio.Task | None = None
 
 
 def build_thinking_partial(
@@ -171,43 +171,57 @@ async def process_task(payload: Dict[str, Any]):
             await redis_client.publish(response_channel, json.dumps(error_payload))
 
 
-async def worker_loop(worker_id: int):
-    """Continuously pop tasks from the Redis list."""
-    logger.info(f"Worker {worker_id} started, ready to pop 'wabi_ai_queue'")
+async def _run_task(payload: Dict[str, Any]) -> None:
+    """Wrap process_task so we can track and clean up the asyncio.Task."""
+    task = asyncio.current_task()
+    _active_tasks.add(task)
+    try:
+        await process_task(payload)
+    finally:
+        _active_tasks.discard(task)
+
+
+async def dispatcher() -> None:
+    """Single Redis connection that spawns an independent task per job.
+
+    Concurrency is governed entirely by the per-agent Semaphores in
+    semaphores.py — not by the number of workers here.
+    """
+    logger.info("Dispatcher started, listening on 'wabi_ai_queue'")
     while True:
         try:
-            # Block aggressively (timeout 0 = unlimited) until list has item
             task_data = await redis_client.blpop("wabi_ai_queue", timeout=0)
             if task_data:
                 _, payload_str = task_data
-                payload = json.loads(payload_str)
-                await process_task(payload)
+                asyncio.create_task(_run_task(json.loads(payload_str)))
         except Exception as e:
-            logger.error(f"Worker {worker_id} fatal exception: {e}")
+            logger.error(f"Dispatcher error: {e}")
             await asyncio.sleep(2)
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Launch N concurrent async workers and pre-warm caches."""
+    """Start the dispatcher and pre-warm caches."""
+    global _dispatcher_task
     # Pre-warm IP geolocation cache (saves 3-5s on first recommendation)
     try:
         from langgraph_app.tools.map.ip_location import get_location_from_ip_async
-
         loc = await get_location_from_ip_async()
         logger.info(f"Pre-warmed IP geolocation cache: {loc}")
     except Exception as e:
         logger.warning(f"IP geolocation pre-warm failed (non-fatal): {e}")
 
-    logger.info(f"Booting {MAX_CONCURRENT_WORKERS} AI Message Brokers...")
-    for i in range(MAX_CONCURRENT_WORKERS):
-        task = asyncio.create_task(worker_loop(i))
-        WORKER_TASKS.append(task)
+    _dispatcher_task = asyncio.create_task(dispatcher())
+    logger.info("AI dispatcher started")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "message_brokers": len(WORKER_TASKS)}
+    return {
+        "status": "ok",
+        "dispatcher_alive": _dispatcher_task is not None and not _dispatcher_task.done(),
+        "active_tasks": len(_active_tasks),
+    }
 
 
 if __name__ == "__main__":

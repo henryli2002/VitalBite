@@ -168,13 +168,13 @@ async def startup_event():
 
 5 处相同代码 → `utils/agent_utils.py:build_profile_context(user_profile) -> str`。
 
-### 2.2 统一 logger 初始化
+### 3.2 统一 logger 初始化
 
 `guardrails/nodes.py` 用 `setup_logger()`，其余用 `get_logger()`，统一为 `get_logger()`。
 
 ---
 
-## Priority 3 — BaseAgent 抽象
+## Priority 4 — BaseAgent 抽象
 
 chitchat 和 goalplanning 除 system prompt 外代码 100% 相同，食物 agent 也有大量重复。
 
@@ -182,25 +182,25 @@ chitchat 和 goalplanning 除 system prompt 外代码 100% 相同，食物 agent
 
 ```
 agents/
-  _base.py           # lang 检测、profile_context、retry cascade、fallback
+  _base.py           # lang 检测、profile_context、retry cascade、model fallback
   chitchat/agent.py  # 只剩 system prompt
   goalplanning/agent.py  # system prompt + 未来的历史解析逻辑
 ```
 
 ---
 
-## Priority 4 — 单元测试与压力测试
+## Priority 5 — 单元测试与压力测试
 
 每个子单元需要：
 - **功能测试**：正常路径 + 边界条件（空输入、无图片、模型失败 mock）
 - **降级路径测试**：主力模型失败时验证 cascade 行为正确
-- **压力测试**：并发验证 Semaphore 限流、退避散开（jitter 有效时不会出现同步冲击波）
+- **压力测试**：并发验证 Semaphore 限流、jitter 退避不出现同步冲击波
 
 优先级：`with_retry` 工具本身 > recognition 流水线 > agent cascade > guardrails
 
 ---
 
-## Priority 5 — Goalplanning 重设计
+## Priority 6 — Goalplanning 重设计
 
 当前只是带完整历史的 chitchat 变体。计划功能：
 - 判断同一时间段上传多图，用户实际吃了哪一个
@@ -214,7 +214,7 @@ agents/
 
 ---
 
-## Priority 6 — 低优先级
+## Priority 7 — 低优先级
 
 - **WebSocket 多标签页**：`active_connections` 改为 `Dict[str, Set[WebSocket]]`
 - **静默 catch 块**：`ip_location.py`、`food_recommendation/agent.py` 吞掉的异常加 `logger.debug`
@@ -226,9 +226,10 @@ agents/
 
 | 优先级 | 内容 | 预估时间 |
 |--------|------|----------|
-| P1 | `with_retry` 工具 + 各节点接入 + llamacpp cascade | 3 小时 |
-| P2 | profile_context 提取 + logger 统一 | 1 小时 |
-| P3 | BaseAgent 抽象（依赖 P1） | 2 小时 |
-| P4 | 单元测试 + 压力测试 | 3-4 小时 |
-| P5 | Goalplanning 重设计 | 需讨论后估算 |
-| P6 | 低优先级杂项 | 1 小时 |
+| P1 | `with_retry` (jitter) + 各节点接入 + model cascade | 3 小时 |
+| P2 | dispatcher 替换 200 workers | 30 分钟 |
+| P3 | profile_context 提取 + logger 统一 | 1 小时 |
+| P4 | BaseAgent 抽象（依赖 P1） | 2 小时 |
+| P5 | 单元测试 + 压力测试 | 3-4 小时 |
+| P6 | Goalplanning 重设计 | 需讨论后估算 |
+| P7 | 低优先级杂项 | 1 小时 |
