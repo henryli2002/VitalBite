@@ -1,129 +1,167 @@
-# WABI Project - 智能健康饮食与营养分析系统
+# WABI — 健康饮食与营养分析
 
-<div align="center">
-  <h3>基于 LangGraph 的多智能体 (Multi-Agent) 营养健康管家</h3>
-  <p>高性能、微服务化、多模态 AI 饮食管理解决方案</p>
-</div>
+基于 LangGraph 的多智能体营养助手，支持食物识别、餐厅推荐和饮食目标规划。
 
 ---
 
-## 📖 项目简介 (Introduction)
+## 架构
 
-**WABI** 是一个先进的、由多个人工智能大语言模型 (LLMs) 驱动的健康饮食与营养分析系统。通过 **LangGraph** 实现复杂的基于状态图的工作流编排，能够精准处理用户的文本指令与多模态图片上传。
-
-系统的核心价值：**精准识别食物营养 (RAG)、个性化餐饮推荐、健康目标规划，并内置强大的安全防御机制。**
-
----
-
-## 🏗️ 系统架构 (Architecture)
-
-WABI 采用了 **生产级微服务架构**，通过异步任务队列实现高并发处理：
-
-1. **wabi-web (Web 接入层)**: 
-   - 基于 **FastAPI** 的高性能网关。
-   - 负责 WebSocket 长连接、多用户 Session 管理、身份验证及 PostgreSQL 数据持久化。
-   - 将 AI 任务推入 **Redis 任务队列 (wabi_ai_queue)**。
-2. **wabi-ai (AI 推理层)**: 
-   - **LangGraph Worker 节点**，集群化部署（默认 200 并发 Worker）。
-   - 从 Redis 队列监听任务，执行完整的 Agent 编排流水线。
-   - 通过 **Redis Pub/Sub** 实时将结果推回给正确的 Web 客户端。
-3. **基础设施层**:
-   - **PostgreSQL**: 存储多用户聊天历史、个人健康档案及偏好。
-   - **Redis**: 核心任务调度中心、语义缓存 (Semantic Cache) 及消息订阅。
-   - **FAISS**: 驱动向量数据库，支持 FNDDS 的语义 RAG 检索。
+```
+用户浏览器 (WebSocket)
+      │
+      ▼
+wabi-web (FastAPI · 端口 8000)
+  · WebSocket 长连接 · 多用户 Session · PostgreSQL 持久化
+  · 将 AI 任务推入 Redis 任务队列 (wabi_ai_queue)
+      │ Redis Pub/Sub
+      ▼
+wabi-ai (LangGraph Worker · 端口 8001)
+  · 200 并发 Worker · Agent 编排流水线
+  · 结果通过 Redis Pub/Sub 推回对应客户端
+      │
+      ▼
+基础设施
+  · PostgreSQL  — 聊天历史 · 用户档案
+  · Redis       — 任务队列 · IP 地理位置缓存 · Pub/Sub
+```
 
 ---
 
-## ✨ 核心特性与技术栈 (Features & Tech Stack)
+## Agent 流水线
 
-- **核心框架**: `LangGraph` & `LangChain` (0.3.0+)
-- **多模型支持**: 统一接口调用 `Google Gemini` (多模态首选)、`OpenAI`、`AWS Bedrock`。
-- **视觉分析 (MLLM)**: 
-  - **高保真多模态处理**: 已修复多模态图像在微服务传输中的损耗问题。
-  - **重量估算**: 自动识别食物并估算克数。
-- **高级 RAG**: 基于 `FAISS` 和 `sentence-transformers` 实现 14000+ FNDDS 营养数据的毫秒级检索。
-- **安全性**: 内置 `Guardrails` 节点，针对 Prompt Injection 及违规内容进行双重防御。
+```
+用户消息
+  └─► input_guardrail (安全检测)
+        └─► router (意图识别 · 实时流式)
+              ├─► recognition   (食物识别 · 4 步流水线)
+              ├─► recommendation (餐厅推荐 · Google Maps)
+              ├─► goalplanning  (目标规划 · 全量历史)
+              └─► chitchat      (通用对话)
+                    └─► output_guardrail
+```
+
+**意图分类（4 类）**
+
+| 意图 | 触发条件 |
+|------|----------|
+| `recognition` | 消息含食物图片 |
+| `recommendation` | 询问附近餐厅、饥饿信号 + 用餐时间 |
+| `goalplanning` | 饮食规划、营养目标、历史摄入回顾 |
+| `chitchat` | 默认：问候、模糊输入、无图识别请求 |
 
 ---
 
-## 🤖 智能体集群 (Agent Swarm)
+## 功能说明
 
-- **Food Recognition Agent**: MLLM 识别图片 + FNDDS RAG 检索 + 营养综合计算。
-- **Recommendation Agent**: 结合 **IP 地理位置** 和 Google Maps API 提供个性化健康餐饮。
-- **Goal Planning Agent**: 结合历史对话，制定长效饮食干预与健康目标。
-- **Tutorial & Chitchat**: 提供系统教程引导与自然语言交互。
+- **多模态食物识别**：LLM 目标检测 → 图像裁剪 → 本地 fine-tuned 模型逐项预测营养 → LLM 汇总
+- **动态时区**：前端传 IANA 时区，IP 自动回落，影响餐次判断（早/中/晚餐）、recognition 推荐评估、今日消息截断边界（3AM）
+- **实时 Thinking 流**：router 节点原生 token streaming，前端气泡实时更新
+- **多 LLM 后端**：统一接口支持 Google Gemini（默认）、OpenAI、AWS Bedrock、llama.cpp 本地模型
+- **goalplanning 两阶段**：Phase 1 用今日消息快速检测意图，Phase 2 携带完整历史执行规划
+- **并发背压**：Semaphore 限流，recognition ≤ 50 并发，chitchat ≤ 200 并发
 
 ---
 
-## 🚀 快速开始 (Quick Start)
+## 技术栈
 
-项目已全面容器化，推荐使用 Docker 进行一键部署。
+| 层 | 技术 |
+|----|------|
+| 编排框架 | LangGraph 0.3+ · LangChain 0.3+ |
+| Web 服务 | FastAPI · Uvicorn · WebSocket |
+| AI 模型 | Google Gemini 2.5 Flash · OpenAI · AWS Bedrock · llama.cpp |
+| 数据库 | PostgreSQL (asyncpg · 连接池) |
+| 缓存/队列 | Redis asyncio |
+| 图像处理 | Pillow · base64 |
+| 容器化 | Docker · Docker Compose |
+
+---
+
+## 快速开始
 
 ### 1. 环境配置
-将 `.env.example` 复制为 `.env`：
+
+复制 `.env.example` 为 `.env`：
+
 ```env
+# LLM
 GOOGLE_API_KEY="AIza..."
+LLM_PROVIDER="gemini"
+GEMINI_MODEL_NAME="gemini-2.5-flash-lite"
+
+# Maps
 GOOGLE_MAPS_API_KEY="..."
+
+# 基础设施
 WABI_REDIS_URL="redis://wabi-redis:6379/0"
 WABI_DB_URL="postgresql://wabi_user:wabi_password@wabi-postgres:5432/wabi_chat"
 ```
 
-### 2. 构建并运行 (Docker Compose)
+### 2. 启动
+
 ```bash
 docker-compose up -d --build
 ```
-启动后访问：
-- **前端 Web 界面**: `http://localhost:8000`
-- **AI Worker 监控**: `http://localhost:8001/health`
+
+| 服务 | 地址 |
+|------|------|
+| 前端 Web 界面 | http://localhost:8000 |
+| AI Worker 健康检查 | http://localhost:8001/health |
 
 ---
 
-## 🛠️ 运维与工具 (Maintenance)
+## 目录结构
 
-### 1. 数据库清理 (Purging Test Data)
-如果系统中存在负载测试留下的冗余数据，可以使用我们内置的维护脚本：
-```bash
-# 物理删除 ID 以 'loadtest_' 开头的所有测试账号及消息
-docker exec wabi-web python3 scripts/cleanup_test_data.py
 ```
-*注：系统已在 API 层级自动过滤测试账号，保证生产界面清洁。*
-
-### 2. 构建向量库
-第一次部署需处理 FNDDS 数据集：
-```bash
-docker exec wabi-ai python3 scripts/build_vector_store.py
-```
-
----
-
-## 📁 目录结构 (Structure)
-
-```text
 WABI/
-├── docker/                  # Docker 配置
-│   ├── Dockerfile.ai        # AI Worker 镜像
-│   └── Dockerfile.web       # Web 服务镜像
 ├── backend/
-│   ├── langgraph_app/       # LangGraph 核心逻辑
-│   │   ├── agents/          # Agent 实现 (food_recognition, recommendation, goalplanning, etc.)
-│   │   ├── orchestrator/    # 工作流编排
-│   │   ├── tools/           # 工具集 (map, nutrition, vision)
-│   │   ├── utils/           # 工具函数
-│   │   └── config.py        # 配置管理
-│   ├── langgraph_server.py  # AI Worker 入口 (Consumer)
-│   ├── web_server.py        # FastAPI API 入口 (Producer)
-│   ├── chat_manager.py      # 会话流控与 Redis 调度
-│   ├── db.py                # PostgreSQL 存储适配层
-│   └── scripts/             # 运维脚本 (清理数据、向量库构建)
-├── frontend/                # 前端页面
-├── eval/                    # 模型评估框架
-└── tests/                   # 测试框架
+│   ├── langgraph_app/
+│   │   ├── agents/
+│   │   │   ├── chitchat/          # 通用对话
+│   │   │   ├── goalplanning/      # 营养目标规划
+│   │   │   ├── food_recognition/  # 多模态食物识别（4 步流水线）
+│   │   │   └── food_recommendation/ # 地理位置餐厅推荐
+│   │   ├── orchestrator/
+│   │   │   ├── graph.py           # LangGraph 工作流定义
+│   │   │   ├── state.py           # GraphState schema
+│   │   │   └── nodes/
+│   │   │       ├── router.py      # 意图路由（流式）
+│   │   │       └── guardrails/    # 输入/输出安全检测
+│   │   ├── tools/
+│   │   │   └── map/               # IP 地理位置 · Google Maps
+│   │   ├── utils/
+│   │   │   ├── llm_factory.py     # LLM 单例缓存工厂
+│   │   │   ├── llm_callback.py    # Token 使用追踪 Callback
+│   │   │   └── semaphores.py      # 并发背压信号量
+│   │   └── config.py              # 统一配置管理
+│   ├── langgraph_server.py        # AI Worker 入口（Consumer）
+│   ├── web_server.py              # FastAPI API 入口（Producer）
+│   ├── chat_manager.py            # 会话流控 · Redis 调度 · 两阶段 goalplanning
+│   ├── db.py                      # PostgreSQL 存储适配层
+│   └── models.py                  # Pydantic 数据模型
+├── frontend/                      # 原生 JS 前端
+├── eval/                          # 模型评估框架
+├── tests/                         # 负载测试 · 准确率测试
+├── Next.md                        # 下一步工程计划
+└── docker/
+    ├── Dockerfile.ai
+    └── Dockerfile.web
 ```
 
 ---
 
-## 📈 最近更新 (Recent Updates)
-- **v2.1.0 (2026-03)**:
-    - ✅ **架构升级**: 从 SQLite 迁移至 PostgreSQL + Redis 异步微服务架构。
-    - ✅ **多模态增强**: 修复了图像 Base64 数据在 Redis 传输中的丢失问题，显著提升识别准确率。
-    - ✅ **数据隐私**: 清理了 3900+ 冗余测试账号，并增加了生产环境数据隔离过滤。
+## 更新日志
+
+### v2.3.0 (2026-04)
+- 时区全链路：前端传 IANA 时区 → IP 自动回落 → 影响餐次判断、recognition 推荐评估、3AM 日期边界
+- Router 流式修复：删除 `TrackedChatModel` 包装层，恢复原生 token streaming
+- Goalplanning 三重执行修复：3 次图执行 → 2 次，修复双发布 Bug
+- Tutorial Agent 移除：相关功能合并入 chitchat，路由简化为 4 类意图
+- Redis 单例化：chat_manager、router、food_recognition 统一模块级懒初始化
+- N+1 查询修复：`list_users` 改为单次 `LEFT JOIN`
+- `inject_dynamic_context` 转义 Bug 修复：`\\n\\n` → `\n\n`
+- `datetime.utcnow()` 废弃警告消除：全部迁移至 `datetime.now(timezone.utc)`
+
+### v2.2.0 (2026-03)
+- 架构升级：SQLite → PostgreSQL + Redis 异步微服务
+- 多模态增强：修复图像 base64 在 Redis 传输中的丢失问题
+- 数据隔离：生产环境过滤测试账号
