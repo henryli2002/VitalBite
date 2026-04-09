@@ -32,6 +32,32 @@ from .schemas import FoodDetection
 
 logger = get_logger(__name__)
 
+
+def _calculate_tdee(user_profile: dict) -> int | None:
+    """Estimate TDEE via Mifflin-St Jeor + PAL. Returns None if data is insufficient."""
+    try:
+        weight = float(user_profile.get("weight_kg") or 0)
+        height = float(user_profile.get("height_cm") or 0)
+        age    = float(user_profile.get("age") or 0)
+    except (ValueError, TypeError):
+        return None
+
+    if not (weight and height and age):
+        return None
+
+    gender = (user_profile.get("gender") or "").lower()
+    if gender == "male":
+        bmr = 10 * weight + 6.25 * height - 5 * age + 5
+    elif gender == "female":
+        bmr = 10 * weight + 6.25 * height - 5 * age - 161
+    else:
+        bmr = 10 * weight + 6.25 * height - 5 * age - 78  # average
+
+    goals = (user_profile.get("fitness_goals") or "").lower()
+    pal = 1.5 if any(w in goals for w in ("high intensity", "active", "athlete")) else 1.2
+    return round(bmr * pal)
+
+
 # Module-level Redis singleton for publishing thinking updates
 _redis_client: Optional[redis.Redis] = None
 
@@ -162,6 +188,13 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                 for k, v in user_profile.items()
                 if v
             )
+
+        tdee = _calculate_tdee(user_profile) if user_profile else None
+        daily_cal_ref = (
+            f"~{tdee} kcal (your estimated daily needs)"
+            if tdee
+            else "~2000 kcal (average adult estimate)"
+        )
 
         # --- Meal Context (set by router) ---
         meal_time = state.get("meal_time") or "not meal time"
@@ -379,7 +412,7 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
 4. ACCURACY: Report the exact numbers from the data. Do not recalculate or modify them.
 5. PERSONALIZATION: Explicitly evaluate the meal against the 'User Profile'. Call out allergies or goals.
 6. LANGUAGE: The response MUST be entirely in '{lang}'.
-7. MEAL FIT: Add one sentence after the table assessing whether the total caloric load is appropriate given the [MEAL CONTEXT]: breakfast ~25-30%, lunch ~35-40%, dinner ~30-35%, snack ~10-15% (~150-250 kcal) of typical daily needs (~2000 kcal).
+7. MEAL FIT: Add one sentence after the table assessing whether the total caloric load is appropriate given the [MEAL CONTEXT]. Reference: daily needs = {daily_cal_ref}. Meal targets: breakfast ~25-30%, lunch ~35-40%, dinner ~30-35%, snack ~10-15% (additional) of daily needs.
 
 [REQUIRED TABLE FORMAT]
 | 项目 (Item) | 重量 (Mass) | 热量 (Calories) | 脂肪 (Fat) | 碳水 (Carbs) | 蛋白质 (Protein) |

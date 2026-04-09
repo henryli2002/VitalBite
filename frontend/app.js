@@ -454,6 +454,7 @@ async function saveProfile() {
             body: JSON.stringify(data),
         });
         btn.textContent = 'Saved!';
+        refreshAllNutritionViz();
         setTimeout(() => {
             btn.textContent = oldText;
             btn.disabled = false;
@@ -1148,7 +1149,7 @@ function buildNutritionViz(lines) {
     const summaryHtml = generateNutritionSummary(total, rec, isZh); // Generate the summary with the appropriate language setting
 
     return `
-    <div class="nutrition-viz" id="${chartId}">
+    <div class="nutrition-viz" id="${chartId}" data-total="${JSON.stringify(total).replace(/"/g, '&quot;')}" data-is-zh="${isZh}">
         <div class="nc-charts-row">
             <div class="nc-pie-section">
                 <div class="nc-section-title">Calorie Breakdown</div>
@@ -1168,6 +1169,42 @@ function buildNutritionViz(lines) {
         <div class="nc-summary">${summaryHtml}</div>
     </div>`;
 }
+
+/** Re-render bar chart + summary on all existing nutrition cards after profile changes. */
+function refreshAllNutritionViz() {
+    document.querySelectorAll('.nutrition-viz[data-total]').forEach(el => {
+        let total;
+        try { total = JSON.parse(el.dataset.total); } catch { return; }
+        const isZh = el.dataset.isZh === 'true';
+        const rec = getRecommendedMeal();
+
+        const barItems = [
+            { label: 'Cal',     actual: total.cal,     recommended: rec.calories, color: 'var(--sol-cyan)' },
+            { label: 'Fat',     actual: total.fat,     recommended: rec.fat,      color: MACRO_COLORS.fat },
+            { label: 'Carbs',   actual: total.carbs,   recommended: rec.carbs,    color: MACRO_COLORS.carbs },
+            { label: 'Protein', actual: total.protein,  recommended: rec.protein,  color: MACRO_COLORS.protein },
+        ];
+        const newBarSVG = buildBarChartSVG(barItems, rec);
+        const newSummary = generateNutritionSummary(total, rec, isZh);
+        const hasProfile = getCurrentProfileValues().weight_kg > 0;
+        const guidelineNote = hasProfile
+            ? '<span class="nc-guide-note">Based on your profile</span>'
+            : '<span class="nc-guide-note">Based on average adult</span>';
+        const mealType = getCurrentMealType(isZh);
+
+        const barSection = el.querySelector('.nc-bar-section');
+        if (barSection) {
+            barSection.querySelector('.nc-section-title').innerHTML =
+                `<span style="white-space: nowrap;">vs Recommended ${mealType}</span> ${guidelineNote}`;
+            // Replace bar SVG (first svg inside nc-bar-section)
+            const oldSvg = barSection.querySelector('svg');
+            if (oldSvg) oldSvg.outerHTML = newBarSVG;
+        }
+        const summaryEl = el.querySelector('.nc-summary');
+        if (summaryEl) summaryEl.innerHTML = newSummary;
+    });
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
 
