@@ -1,4 +1,4 @@
-"""Food recognition agent using RAG for nutritional data."""
+"""Food recognition agent."""
 
 from langgraph_app.agents.food_recognition.agent import recognition_node
 

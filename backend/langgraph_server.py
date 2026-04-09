@@ -88,14 +88,14 @@ def build_langchain_messages(history: List[Dict]) -> List[BaseMessage]:
             messages.append(
                 HumanMessage(
                     content=content,
-                    response_metadata={"timestamp": timestamp} if timestamp else {},
+                    additional_kwargs={"timestamp": timestamp} if timestamp else {},
                 )
             )
         elif role == "assistant":
             messages.append(
                 AIMessage(
                     content=content,
-                    response_metadata={"timestamp": timestamp} if timestamp else {},
+                    additional_kwargs={"timestamp": timestamp} if timestamp else {},
                 )
             )
     return messages

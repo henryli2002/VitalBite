@@ -114,10 +114,10 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                     AIMessage(
                         content="未在消息中找到有效的图片。"
                         if lang == "Chinese"
-                        else "No valid image found."
+                        else "No valid image found.",
+                        additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                 ],
-                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
 
         # --- Step 2: Object Detection via LLM ---
@@ -271,10 +271,10 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                     AIMessage(
                         content=f"抱歉，分析时出错：{e}"
                         if lang == "Chinese"
-                        else f"Sorry, error: {e}"
+                        else f"Sorry, error: {e}",
+                        additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                 ],
-                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
 
         step_time = time.time() - step_start
@@ -353,10 +353,10 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
                 f"Step 4 complete. Total steps time: {sum(m['time_seconds'] for m in step_metrics)}s"
             )
 
+            ai_message.additional_kwargs["timestamp"] = datetime.now(timezone.utc).isoformat()
             return {
                 "recognition_result": recognition_result,
                 "messages": [ai_message],
-                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
         except Exception as e:
             logger.error(f"Step 4 (LLM summary) failed: {e}")
@@ -366,10 +366,10 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
                     AIMessage(
                         content=f"抱歉，总结出错：{e}"
                         if lang == "Chinese"
-                        else f"Sorry, error: {e}"
+                        else f"Sorry, error: {e}",
+                        additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                 ],
-                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
             }
     finally:
         pass  # Redis client is a module-level singleton, do not close

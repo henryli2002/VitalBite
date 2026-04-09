@@ -1,9 +1,8 @@
 """Semantic Backpressure logic using Asyncio Semaphores.
 
 This module provides macroscopic concurrency limits for Individual Agent Nodes within LangGraph.
-It allows us to set `MAX_CONCURRENT_WORKERS` to 200 to instantly process fast intent classification
-and chitchat payloads, while strictly capping heavy Vision and RAG workloads to prevent API throttling
-(429 Too Many Requests) and memory overflow.
+It allows fast intent classification and chitchat to run at full concurrency while capping
+heavy Vision workloads to prevent API throttling (429 Too Many Requests) and memory overflow.
 
 IMPORTANT: Semaphores are created lazily via a registry to avoid binding
 to a "ghost" event loop that exists at module-import time but is NOT the
@@ -20,9 +19,8 @@ _SEMAPHORE_LIMITS: Dict[str, int] = {
     "intent":          200,   # Lightweight text classification
     "chitchat":        200,   # Flash-lite text, ~1s/req
     "recommendation":   100,   # LLM + Google Maps API + LLM, moderate
-    "recognition":      50,    # HEAVY: Vision + FAISS. Lowered to 50 for 3GB RAM safety (~2-4MB base64 per req)
+    "recognition":      50,    # HEAVY: Vision model, ~2-4MB base64 per req. Capped for RAM safety
     "goalplanning":     100,   # Needs full history pull, high memory per req
-    "fndds":            16,    # Thread pool backpressure for FAISS CPU retrieval (4 cores -> 4 workers + 12 queue slots)
 }
 
 # Runtime cache: created per event-loop at first access

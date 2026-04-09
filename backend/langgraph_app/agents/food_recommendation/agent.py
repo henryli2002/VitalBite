@@ -184,8 +184,7 @@ You are WABI, an expert food recommendation assistant.
             )
             return {
                 "recommendation_result": {"restaurants": []},
-                "messages": [AIMessage(content=error_msg)],
-                "message_timestamps": [datetime.now(timezone.utc).isoformat()],
+                "messages": [AIMessage(content=error_msg, additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()})],
             }
 
         # Step 3: Format recommendations into a structured object
@@ -256,6 +255,7 @@ Transform raw restaurant data into helpful, personalized suggestions.
             )
         markdown_response += f"{structured_response.conclusion}"
 
+        ts = datetime.now(timezone.utc).isoformat()
         return {
             "recommendation_result": {
                 "restaurants": restaurants,
@@ -263,8 +263,7 @@ Transform raw restaurant data into helpful, personalized suggestions.
                 if hasattr(query_params, "model_dump")
                 else {},
             },
-            "messages": [AIMessage(content=markdown_response)],
-            "message_timestamps": [datetime.now(timezone.utc).isoformat()],
+            "messages": [AIMessage(content=markdown_response, additional_kwargs={"timestamp": ts})],
         }
 
     except Exception as e:
@@ -275,6 +274,5 @@ Transform raw restaurant data into helpful, personalized suggestions.
         )
         return {
             "recommendation_result": None,
-            "messages": [AIMessage(content=error_msg)],
-            "message_timestamps": [datetime.now(timezone.utc).isoformat()],
+            "messages": [AIMessage(content=error_msg, additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()})],
         }

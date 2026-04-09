@@ -26,14 +26,6 @@ class AnalysisData(TypedDict, total=False):
     safety_category: Optional[str]
 
 
-def _add_timestamps(left: List[str], right: List[str]) -> List[str]:
-    """Reducer for message timestamps to ensure they are appended."""
-    if not left:
-        left = []
-    if not right:
-        right = []
-    return left + right
-
 class GraphState(TypedDict, total=False):
     """Main state structure for the LangGraph workflow."""
     # Context layer
@@ -64,8 +56,8 @@ class GraphState(TypedDict, total=False):
     debug_logs: Annotated[List[dict], _add_logs]
     
     # Message history (LangGraph standard)
+    # Timestamps are stored in each message's additional_kwargs["timestamp"]
     messages: Annotated[List[AnyMessage], add_messages]
-    message_timestamps: Annotated[List[str], _add_timestamps]
 
 # Standardized return type for all nodes
 class NodeOutput(TypedDict, total=False):
@@ -79,5 +71,4 @@ class NodeOutput(TypedDict, total=False):
     recommendation_result: Optional[dict]
     debug_logs: List[dict]
     messages: List[AnyMessage]
-    message_timestamps: List[str]
 

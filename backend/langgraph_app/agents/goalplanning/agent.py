@@ -71,6 +71,7 @@ Help the user define and achieve actionable dietary goals based on their history
             if attempt < 2:
                 await asyncio.sleep(sleep_times[attempt])
 
+    ts = datetime.now(timezone.utc).isoformat()
     if not ai_message:
         fallback = (
             "您好！我可以帮您规划饮食目标。请告诉我您的需求。"
@@ -81,8 +82,8 @@ Help the user define and achieve actionable dietary goals based on their history
             logger.error(
                 f"[goalplanning] Generation ultimately failed after retries: {last_error}"
             )
-        ai_message = AIMessage(content=fallback)
+        ai_message = AIMessage(content=fallback, additional_kwargs={"timestamp": ts})
+    else:
+        ai_message.additional_kwargs["timestamp"] = ts
 
-    msg: AnyMessage = ai_message  # type: ignore
-
-    return {"messages": [msg], "message_timestamps": [datetime.now(timezone.utc).isoformat()]}
+    return {"messages": [ai_message]}

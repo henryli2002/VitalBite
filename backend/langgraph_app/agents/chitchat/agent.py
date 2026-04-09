@@ -69,6 +69,7 @@ Engage in general conversation, building rapport while naturally incorporating t
             if attempt < 2:
                 await asyncio.sleep(sleep_times[attempt])
 
+    ts = datetime.now(timezone.utc).isoformat()
     if not ai_message:
         fallback = (
             "您好！我可以帮您识别食物图片或推荐餐厅。请告诉我您需要什么帮助，或者上传一张食物图片。"
@@ -77,9 +78,8 @@ Engage in general conversation, building rapport while naturally incorporating t
         )
         if last_error:
             logger.error(f"[chitchat] Generation ultimately failed after retries: {last_error}")
-        ai_message = AIMessage(content=fallback)
+        ai_message = AIMessage(content=fallback, additional_kwargs={"timestamp": ts})
+    else:
+        ai_message.additional_kwargs["timestamp"] = ts
 
-    # Cast to AnyMessage to satisfy typing if needed
-    msg: AnyMessage = ai_message  # type: ignore
-
-    return {"messages": [msg], "message_timestamps": [datetime.now(timezone.utc).isoformat()]}
+    return {"messages": [ai_message]}
