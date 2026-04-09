@@ -8,6 +8,7 @@ import httpx
 import redis.asyncio as redis
 from langgraph_app.utils.logger import get_logger
 from langgraph_app.config import config as _app_config
+from langgraph_app.utils.retry import with_retry
 
 logger = get_logger(__name__)
 
@@ -105,15 +106,22 @@ class GoogleMapsTool:
         except Exception as e:
             logger.warning(f"Redis Cache GET failed: {e}")
 
-        # 2. Cache MISS -> Call Google
+        # 2. Cache MISS -> Call Google (with retry)
         logger.info(f"Redis Cache MISS: Fetching live data from Google Maps for {payload['textQuery']}...")
         try:
             await self.redis_client.incr("wabi_metrics:cache_miss")
-            response = await self._http_client.post(
-                self.text_search_url, json=payload, headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
+
+            async def _do_request():
+                resp = await self._http_client.post(
+                    self.text_search_url, json=payload, headers=headers
+                )
+                resp.raise_for_status()
+                return resp.json()
+
+            data = await with_retry(_do_request, attempts=3, base=1.0, cap=20.0, fallback=None)
+            if data is None:
+                logger.error("Google Maps API failed after retries")
+                return []
 
             places = data.get("places", [])
             formatted_results = []

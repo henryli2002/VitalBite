@@ -9,6 +9,8 @@ from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.llm_callback import create_callback_handler
 from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.logger import get_logger
+from langgraph_app.utils.retry import with_retry
+from langgraph_app.config import config as _config
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, AnyMessage
 from langgraph_app.utils.utils import (
@@ -108,36 +110,24 @@ User Image (if any) might implicitly suggest a cuisine.
         local_messages.append(HumanMessage(content=extraction_prompt))
 
         structured_llm = client.with_structured_output(RecommendationQuery)
-        query_params = None
-        last_error_1 = None
-        sleep_times = [0.2, 0.5]
-
-        for attempt in range(3):
-            try:
-                sys_content = f"""[ROLE]
+        sys_content = f"""[ROLE]
 You are WABI, an expert food recommendation assistant.
 
 [CONTEXT]{profile_context}"""
-                if last_error_1:
-                    sys_content += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_1)}. Please correct your JSON output and ensure it strictly follows the schema."
 
-                query_params = await structured_llm.ainvoke(
-                    inject_dynamic_context([SystemMessage(content=sys_content)] + local_messages),
-                    config={"callbacks": [create_callback_handler("food_recommendation_query")]},
-                )
-                break
-            except Exception as e:
-                last_error_1 = e
-                logger.warning(
-                    f"[food_recommendation] Extraction failed on attempt {attempt + 1}: {e}"
-                )
-                if attempt < 2:
-                    await asyncio.sleep(sleep_times[attempt])
+        query_params = await with_retry(
+            lambda: structured_llm.ainvoke(
+                inject_dynamic_context([SystemMessage(content=sys_content)] + local_messages),
+                config={"callbacks": [create_callback_handler("food_recommendation_query")]},
+            ),
+            attempts=3,
+            base=0.3,
+            cap=5.0,
+            fallback=None,
+        )
 
         if query_params is None:
-            raise last_error_1 or Exception(
-                "Failed to generate RecommendationQuery after retries."
-            )
+            raise Exception("Failed to generate RecommendationQuery after retries.")
 
         # Determine location fallback
         final_lat = None
@@ -215,32 +205,19 @@ Transform raw restaurant data into helpful, personalized suggestions.
         local_messages_2.append(HumanMessage(content=formatting_prompt))
 
         structured_llm_2 = client.with_structured_output(Recommendation)
-        structured_response = None
-        last_error_2 = None
-
-        for attempt in range(3):
-            try:
-                sys_content_2 = system_instruction
-                if last_error_2:
-                    sys_content_2 += f"\n\nNOTE: Your previous attempt failed validation with this error: {str(last_error_2)}. Please correct your JSON output and ensure it strictly follows the schema."
-
-                structured_response = await structured_llm_2.ainvoke(
-                    inject_dynamic_context([SystemMessage(content=sys_content_2)] + local_messages_2),
-                    config={"callbacks": [create_callback_handler("food_recommendation")], "tags": ["final_node_output"]},
-                )
-                break
-            except Exception as e:
-                last_error_2 = e
-                logger.warning(
-                    f"[food_recommendation] Formatting failed on attempt {attempt + 1}: {e}"
-                )
-                if attempt < 2:
-                    await asyncio.sleep(sleep_times[attempt])
+        structured_response = await with_retry(
+            lambda: structured_llm_2.ainvoke(
+                inject_dynamic_context([SystemMessage(content=system_instruction)] + local_messages_2),
+                config={"callbacks": [create_callback_handler("food_recommendation")], "tags": ["final_node_output"]},
+            ),
+            attempts=3,
+            base=0.3,
+            cap=5.0,
+            fallback=None,
+        )
 
         if structured_response is None:
-            raise last_error_2 or Exception(
-                "Failed to generate Recommendation after retries."
-            )
+            raise Exception("Failed to generate Recommendation after retries.")
 
         # Step 4: Convert the structured response to a formatted markdown string
         markdown_response = f"### {structured_response.title}\n\n"

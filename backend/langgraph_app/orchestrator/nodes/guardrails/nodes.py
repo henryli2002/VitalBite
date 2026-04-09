@@ -5,6 +5,7 @@ This module provides the main entry points for the guardrail system.
 
 from typing import Any
 import asyncio
+import random
 
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.orchestrator.nodes.guardrails.config import (
@@ -259,7 +260,7 @@ Be lenient with normal food-related queries, even if they mention dietary restri
                 f"[{node_name}] Guardrail LLM check failed on attempt {attempt + 1}: {e}"
             )
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(random.uniform(0, min(5.0, 0.3 * (2 ** attempt))))
 
     # On error, default to safe but log the issue
     logger.error(

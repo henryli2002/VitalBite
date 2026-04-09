@@ -110,6 +110,15 @@ class Config:
     # Redis
     REDIS_URL: str = os.getenv("WABI_REDIS_URL", "redis://redis:6379/0")
 
+    # LLM cascade / retry
+    # Seconds before the primary LLM call is abandoned and the fallback is tried.
+    PRIMARY_LLM_TIMEOUT_S: float = float(os.getenv("PRIMARY_LLM_TIMEOUT_S", "10.0"))
+    # Heavier calls (vision, recommendation) get a longer window.
+    HEAVY_LLM_TIMEOUT_S: float = float(os.getenv("HEAVY_LLM_TIMEOUT_S", "15.0"))
+    # Number of conversation turns (human+AI pairs) kept when truncating history
+    # for the context-limited llamacpp fallback model.
+    FALLBACK_LLM_MAX_HISTORY_TURNS: int = int(os.getenv("FALLBACK_LLM_MAX_HISTORY_TURNS", "5"))
+
     # LLM Provider Selection: gemini | openai | bedrock_claude | llamacpp
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
 

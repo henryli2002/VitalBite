@@ -24,6 +24,8 @@ from langgraph_app.utils.llm_callback import create_callback_handler
 from langgraph_app.utils.llm_factory import inject_dynamic_context
 from langgraph_app.utils.utils import get_dominant_language
 from langgraph_app.utils.semaphores import with_semaphore
+from langgraph_app.utils.retry import with_retry
+from langgraph_app.config import config
 
 from .predictor import extract_image_bytes, predict_nutrition
 from .schemas import FoodDetection
@@ -58,6 +60,75 @@ async def _send_thinking_update(
         await redis_client.publish(response_channel, json.dumps(payload))
     except Exception as e:
         logger.warning(f"[recognition] Failed to publish thinking update: {e}")
+
+
+async def _estimate_nutrition_with_llm(
+    client,
+    detected_items: list,
+    lang: str,
+) -> list:
+    """Fallback: ask the LLM to estimate nutrition by food name (B-strategy for Step 3).
+
+    Returns a list matching the itemized_nutrition format:
+        [{"name": str, "nutrition": {calculated_weight_g, total_calories, ...}}, ...]
+    """
+    names = [
+        (item.get("name") if isinstance(item, dict) else getattr(item, "name", "Unknown Food"))
+        for item in detected_items
+    ]
+    prompt = (
+        f"Estimate the nutritional content for these food items: {', '.join(names)}.\n"
+        "For each item return a JSON object with keys: "
+        "name, calculated_weight_g, total_calories, total_fat, total_carb, total_protein.\n"
+        "Return a JSON array only, no extra text."
+    )
+    try:
+        response = await with_retry(
+            lambda: client.ainvoke(
+                [HumanMessage(content=prompt)],
+                config={"callbacks": [create_callback_handler("food_recognition_fallback")]},
+            ),
+            attempts=3,
+            base=0.8,
+            cap=15.0,
+            fallback=None,
+        )
+        if response is None:
+            raise ValueError("LLM returned None")
+        raw = response.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        items_data = json.loads(raw)
+        result = []
+        for item in items_data:
+            nutrition = {
+                "calculated_weight_g": float(item.get("calculated_weight_g", 0)),
+                "total_calories": float(item.get("total_calories", 0)),
+                "total_fat": float(item.get("total_fat", 0)),
+                "total_carb": float(item.get("total_carb", 0)),
+                "total_protein": float(item.get("total_protein", 0)),
+            }
+            result.append({"name": item.get("name", "Unknown"), "nutrition": nutrition})
+        return result
+    except Exception as e:
+        logger.warning(f"[recognition] LLM nutrition estimation also failed: {e}")
+        # Last resort: zeros with a note — at least Step 4 can still run
+        return [
+            {
+                "name": n,
+                "nutrition": {
+                    "calculated_weight_g": 0.0,
+                    "total_calories": 0.0,
+                    "total_fat": 0.0,
+                    "total_carb": 0.0,
+                    "total_protein": 0.0,
+                },
+            }
+            for n in names
+        ]
 
 
 @with_semaphore("recognition")
@@ -126,6 +197,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
         )
         step_start = time.time()
         logger.info("Step 2: LLM Object Detection...")
+        detected_items = []
         try:
             structured_llm = client.with_structured_output(FoodDetection)
             img_b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -141,10 +213,20 @@ async def recognition_node(state: GraphState) -> NodeOutput:
                     },
                 ]
             )
-            detection_res = await structured_llm.ainvoke([detect_msg])
-            detected_items = getattr(detection_res, "items", [])
-            if not detected_items and isinstance(detection_res, dict):
-                detected_items = detection_res.get("items", [])
+            detection_res = await asyncio.wait_for(
+                with_retry(
+                    lambda: structured_llm.ainvoke([detect_msg]),
+                    attempts=3,
+                    base=0.8,
+                    cap=15.0,
+                    fallback=None,
+                ),
+                timeout=config.PRIMARY_LLM_TIMEOUT_S,
+            )
+            if detection_res is not None:
+                detected_items = getattr(detection_res, "items", [])
+                if not detected_items and isinstance(detection_res, dict):
+                    detected_items = detection_res.get("items", [])
         except Exception as e:
             logger.error(f"Object detection failed: {e}")
             detected_items = []
@@ -174,108 +256,84 @@ async def recognition_node(state: GraphState) -> NodeOutput:
             "total_carb": 0.0,
             "total_protein": 0.0,
         }
+        nutrition_source = "local_model"
 
-        try:
-            if not detected_items:
-                # Fallback to full image
-                logger.info("No items detected. Falling back to full image.")
+        if not detected_items:
+            # No items detected — run local model on the full image
+            logger.info("No items detected. Falling back to full image.")
+            try:
                 res = predict_nutrition(image_bytes)
                 itemized_nutrition.append({"name": "Full Meal", "nutrition": res})
                 for k in total_nutrition:
                     total_nutrition[k] += res.get(k, 0.0)
-            else:
-                img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                w, h = img.size
-                for i, item in enumerate(detected_items):
-                    # Calculate pixel coords
-                    if isinstance(item, dict):
-                        box = item.get("box", {})
-                        name = item.get("name", "Unknown Food")
-                        ymin = (
-                            box.get("ymin", 0)
-                            if isinstance(box, dict)
-                            else getattr(box, "ymin", 0)
-                        )
-                        xmin = (
-                            box.get("xmin", 0)
-                            if isinstance(box, dict)
-                            else getattr(box, "xmin", 0)
-                        )
-                        ymax = (
-                            box.get("ymax", 1000)
-                            if isinstance(box, dict)
-                            else getattr(box, "ymax", 1000)
-                        )
-                        xmax = (
-                            box.get("xmax", 1000)
-                            if isinstance(box, dict)
-                            else getattr(box, "xmax", 1000)
-                        )
-                    else:
-                        box = getattr(item, "box", None)
-                        name = getattr(item, "name", "Unknown Food")
-                        if box is None:
-                            continue
-                        ymin = (
-                            getattr(box, "ymin", 0)
-                            if not isinstance(box, dict)
-                            else box.get("ymin", 0)
-                        )
-                        xmin = (
-                            getattr(box, "xmin", 0)
-                            if not isinstance(box, dict)
-                            else box.get("xmin", 0)
-                        )
-                        ymax = (
-                            getattr(box, "ymax", 1000)
-                            if not isinstance(box, dict)
-                            else box.get("ymax", 1000)
-                        )
-                        xmax = (
-                            getattr(box, "xmax", 1000)
-                            if not isinstance(box, dict)
-                            else box.get("xmax", 1000)
-                        )
+            except Exception as e:
+                logger.warning(f"[recognition] Local model failed on full image: {e}. Using LLM estimate.")
+                nutrition_source = "llm_estimate"
+                itemized_nutrition = await _estimate_nutrition_with_llm(client, [{"name": "Meal"}], lang)
+        else:
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            w, h = img.size
+            local_model_ok = True
 
-                    # Ensure valid crop box
-                    crop_xmin = max(0, min(w, int(xmin * w / 1000)))
-                    crop_ymin = max(0, min(h, int(ymin * h / 1000)))
-                    crop_xmax = max(0, min(w, int(xmax * w / 1000)))
-                    crop_ymax = max(0, min(h, int(ymax * h / 1000)))
+            for i, item in enumerate(detected_items):
+                if isinstance(item, dict):
+                    box = item.get("box", {})
+                    name = item.get("name", "Unknown Food")
+                    ymin = box.get("ymin", 0) if isinstance(box, dict) else getattr(box, "ymin", 0)
+                    xmin = box.get("xmin", 0) if isinstance(box, dict) else getattr(box, "xmin", 0)
+                    ymax = box.get("ymax", 1000) if isinstance(box, dict) else getattr(box, "ymax", 1000)
+                    xmax = box.get("xmax", 1000) if isinstance(box, dict) else getattr(box, "xmax", 1000)
+                else:
+                    box = getattr(item, "box", None)
+                    name = getattr(item, "name", "Unknown Food")
+                    if box is None:
+                        continue
+                    ymin = getattr(box, "ymin", 0) if not isinstance(box, dict) else box.get("ymin", 0)
+                    xmin = getattr(box, "xmin", 0) if not isinstance(box, dict) else box.get("xmin", 0)
+                    ymax = getattr(box, "ymax", 1000) if not isinstance(box, dict) else box.get("ymax", 1000)
+                    xmax = getattr(box, "xmax", 1000) if not isinstance(box, dict) else box.get("xmax", 1000)
 
-                    if crop_xmax <= crop_xmin or crop_ymax <= crop_ymin:
-                        continue  # Invalid box
+                crop_xmin = max(0, min(w, int(xmin * w / 1000)))
+                crop_ymin = max(0, min(h, int(ymin * h / 1000)))
+                crop_xmax = max(0, min(w, int(xmax * w / 1000)))
+                crop_ymax = max(0, min(h, int(ymax * h / 1000)))
 
-                    crop_img = img.crop((crop_xmin, crop_ymin, crop_xmax, crop_ymax))
-                    buf = io.BytesIO()
-                    crop_img.save(buf, format="JPEG")
+                if crop_xmax <= crop_xmin or crop_ymax <= crop_ymin:
+                    continue  # Invalid box
 
+                crop_img = img.crop((crop_xmin, crop_ymin, crop_xmax, crop_ymax))
+                buf = io.BytesIO()
+                crop_img.save(buf, format="JPEG")
+
+                try:
                     res = predict_nutrition(buf.getvalue())
                     itemized_nutrition.append({"name": name, "nutrition": res})
-
                     for k in total_nutrition:
                         total_nutrition[k] += res.get(k, 0.0)
                         total_nutrition[k] = round(total_nutrition[k], 2)
-
-                    # Update progress for each item
                     await _send_thinking_update(
-                        redis_client,
-                        response_channel,
+                        redis_client, response_channel,
                         f"Step 3/4: Analyzing item {i + 1}/{num_items}",
                     )
-
-        except Exception as e:
-            logger.error(f"Cropping/Prediction failed: {e}")
-            return {
-                "messages": [
-                    AIMessage(
-                        content=f"抱歉，分析时出错：{e}"
-                        if lang == "Chinese"
-                        else f"Sorry, error: {e}",
-                        additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()},
+                except Exception as e:
+                    # B-strategy: one item fails → assume systemic, switch all to LLM estimation
+                    logger.warning(
+                        f"[recognition] Local model failed on item '{name}' (attempt {i+1}): {e}. "
+                        "Switching all items to LLM estimation."
                     )
-                ],
-            }
+                    local_model_ok = False
+                    break
+
+            if not local_model_ok:
+                nutrition_source = "llm_estimate"
+                await _send_thinking_update(
+                    redis_client, response_channel, "Step 3/4: Using LLM nutrition estimation"
+                )
+                itemized_nutrition = await _estimate_nutrition_with_llm(client, detected_items, lang)
+                total_nutrition = {k: 0.0 for k in total_nutrition}
+                for entry in itemized_nutrition:
+                    for k in total_nutrition:
+                        total_nutrition[k] = round(total_nutrition[k] + entry["nutrition"].get(k, 0.0), 2)
 
         step_time = time.time() - step_start
         step_metrics.append(
@@ -286,6 +344,7 @@ async def recognition_node(state: GraphState) -> NodeOutput:
             "itemized_analysis": itemized_nutrition,
             "total_analysis": total_nutrition,
             "step_metrics": step_metrics,
+            "nutrition_source": nutrition_source,
         }
 
         # --- Step 4: LLM generates final summary ---
@@ -336,24 +395,47 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
                 + [HumanMessage(content=summary_prompt)]
             )
             messages_to_send = inject_dynamic_context(messages_to_send)
-            ai_message = await client.ainvoke(
-                messages_to_send,
-                config={"callbacks": [create_callback_handler("food_recognition")], "tags": ["final_node_output"]},
-            )
+            invoke_cfg = {
+                "callbacks": [create_callback_handler("food_recognition")],
+                "tags": ["final_node_output"],
+            }
+            # with_retry handles transient failures; cascade to llamacpp on exhaustion/timeout
+            ai_message = None
+            try:
+                ai_message = await asyncio.wait_for(
+                    with_retry(
+                        lambda: client.ainvoke(messages_to_send, config=invoke_cfg),
+                        attempts=3,
+                        base=0.8,
+                        cap=15.0,
+                        fallback=None,
+                    ),
+                    timeout=config.PRIMARY_LLM_TIMEOUT_S,
+                )
+            except Exception as e:
+                logger.warning(f"[recognition] Step 4 primary failed ({type(e).__name__}), cascading")
+
+            if ai_message is None:
+                # Cascade: llamacpp receives only the numeric summary (no image)
+                from langgraph_app.utils.cascade import invoke_with_cascade
+                summary_msgs = [
+                    SystemMessage(content=system_content),
+                    HumanMessage(content=summary_prompt),
+                ]
+                ai_message = await invoke_with_cascade(
+                    module="food_recognition",
+                    messages_to_send=summary_msgs,
+                    lang=lang,
+                    timeout_s=config.PRIMARY_LLM_TIMEOUT_S,
+                )
 
             step_time = time.time() - step_start
-            step_metrics.append(
-                {
-                    "step": 4,
-                    "name": "generate_summary",
-                    "time_seconds": round(step_time, 2),
-                }
-            )
-            logger.info(
-                f"Step 4 complete. Total steps time: {sum(m['time_seconds'] for m in step_metrics)}s"
-            )
+            step_metrics.append({"step": 4, "name": "generate_summary", "time_seconds": round(step_time, 2)})
+            logger.info(f"Step 4 complete. Total steps time: {sum(m['time_seconds'] for m in step_metrics)}s")
 
             ai_message.additional_kwargs["timestamp"] = datetime.now(timezone.utc).isoformat()
+            if nutrition_source == "llm_estimate":
+                ai_message.additional_kwargs["nutrition_source"] = "llm_estimate"
             return {
                 "recognition_result": recognition_result,
                 "messages": [ai_message],
@@ -371,3 +453,15 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
                     )
                 ],
             }
+    except Exception as e:
+        logger.error(f"Recognition node failed: {e}")
+        return {
+            "messages": [
+                AIMessage(
+                    content=f"抱歉，识别出错：{e}"
+                    if lang == "Chinese"
+                    else f"Sorry, error: {e}",
+                    additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()},
+                )
+            ],
+        }

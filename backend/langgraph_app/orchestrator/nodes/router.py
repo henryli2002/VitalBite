@@ -8,6 +8,8 @@ try:
 except ImportError:
     ZoneInfo = None  # type: ignore[assignment,misc]
 
+import random
+
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.llm_callback import create_callback_handler
@@ -158,7 +160,6 @@ CONFIDENCE: <0.00-1.00>
 REASONING: <brief but specific why this intent fits the user message>"""
 
     last_error: Exception | None = None
-    sleep_times = [0.2, 0.5]
     for attempt in range(3):
         try:
             messages_to_send = [SystemMessage(content=system_prompt)] + messages
@@ -254,7 +255,7 @@ REASONING: <brief but specific why this intent fits the user message>"""
                 f"[router] Intent routing failed on attempt {attempt + 1}: {e}"
             )
             if attempt < 2:
-                await asyncio.sleep(sleep_times[attempt])
+                await asyncio.sleep(random.uniform(0, min(5.0, 0.3 * (2 ** attempt))))
 
     logger.error(
         f"[router] Intent routing ultimately failed after retries: {last_error}",
