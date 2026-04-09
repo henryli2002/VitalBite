@@ -107,6 +107,9 @@ class Config:
         },
     }
 
+    # Redis
+    REDIS_URL: str = os.getenv("WABI_REDIS_URL", "redis://redis:6379/0")
+
     # LLM Provider Selection: gemini | openai | bedrock_claude | llamacpp
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
 

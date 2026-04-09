@@ -1,8 +1,7 @@
 """Chit-chat agent for handling general conversation."""
 
 from typing import Dict, Any, List
-from langchain_core.messages import AIMessage, SystemMessage, AnyMessage
-from langgraph.types import interrupt
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.llm_callback import create_callback_handler

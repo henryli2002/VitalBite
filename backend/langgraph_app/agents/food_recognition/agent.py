@@ -36,8 +36,8 @@ _redis_client: Optional[redis.Redis] = None
 def _get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
-        _redis_client = redis.from_url(url, decode_responses=True)
+        from langgraph_app.config import config
+        _redis_client = redis.from_url(config.REDIS_URL, decode_responses=True)
     return _redis_client
 
 
@@ -371,5 +371,3 @@ Summarize the user's meal with an item-by-item breakdown and total, based strict
                     )
                 ],
             }
-    finally:
-        pass  # Redis client is a module-level singleton, do not close

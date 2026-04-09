@@ -1,6 +1,13 @@
 """Intent routing node."""
 
 from typing import Dict, Any, Literal, Optional
+from datetime import datetime, timezone, timedelta
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore[assignment,misc]
+
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.llm_callback import create_callback_handler
@@ -21,8 +28,7 @@ _redis_client: redis.Redis = None  # type: ignore[assignment]
 def _get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        url = os.environ.get("WABI_REDIS_URL", "redis://redis:6379/0")
-        _redis_client = redis.from_url(url, decode_responses=True)
+        _redis_client = redis.from_url(config.REDIS_URL, decode_responses=True)
     return _redis_client
 
 logger = get_logger(__name__)
@@ -89,12 +95,6 @@ async def intent_router_node(state: GraphState) -> NodeOutput:
     client = get_llm_client(module="router")
     messages = state.get("messages", [])
     response_channel = state.get("response_channel")
-
-    from datetime import datetime, timezone, timedelta
-    try:
-        from zoneinfo import ZoneInfo
-    except ImportError:
-        ZoneInfo = None
 
     # Resolve user timezone: frontend-provided first, then IP fallback, then UTC+8
     user_context = state.get("user_context") or {}

@@ -5,6 +5,7 @@ Provides:
 - ChatManager: Manages user sessions and routes messages through LangGraph
 """
 
+import json
 import time
 import uuid
 import logging
@@ -27,8 +28,8 @@ _redis_client: Optional[redis.Redis] = None
 def _get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        url = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
-        _redis_client = redis.from_url(url, decode_responses=True)
+        from langgraph_app.config import config
+        _redis_client = redis.from_url(config.REDIS_URL, decode_responses=True)
     return _redis_client
 
 
@@ -150,7 +151,6 @@ class ChatManager:
     async def get_history(self, user_id: str) -> List[Dict[str, Any]]:
         """Get message history for a user."""
         history = await self.store.load_history(user_id)
-        import json
         for msg in history:
             try:
                 if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
@@ -193,7 +193,6 @@ class ChatManager:
         else:
             # Multimodal content (text + images)
             new_msg = HumanMessage(content=content)
-            import json
             save_content = json.dumps(content)
 
         # Save user message to DB
@@ -212,7 +211,6 @@ class ChatManager:
         else:
             today_history = await self.store.load_history(user_id)
 
-        import json
         for msg in today_history:
             try:
                 if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
@@ -240,8 +238,6 @@ class ChatManager:
 
         # Redis PubSub and Job Queue pattern
         try:
-            import json
-
             redis_client = _get_redis()
             response_channel = payload["response_channel"]
             pubsub = redis_client.pubsub()

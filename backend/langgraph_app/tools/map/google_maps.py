@@ -7,10 +7,10 @@ import hashlib
 import httpx
 import redis.asyncio as redis
 from langgraph_app.utils.logger import get_logger
+from langgraph_app.config import config as _app_config
 
 logger = get_logger(__name__)
 
-REDIS_URL = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
 
 class GoogleMapsTool:
     """Wrapper for Google Maps API with 24-hour Redis caching for identical queries."""
@@ -23,7 +23,7 @@ class GoogleMapsTool:
             )
 
         self.text_search_url = "https://places.googleapis.com/v1/places:searchText"
-        self.redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        self.redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
         # Persistent HTTP client — reuses TCP connections across requests
         self._http_client = httpx.AsyncClient(timeout=10.0)
         self.CACHE_TTL_SECONDS = 86400  # 24 hours for successful results

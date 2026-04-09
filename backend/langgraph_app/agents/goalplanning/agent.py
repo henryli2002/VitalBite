@@ -1,8 +1,7 @@
 """Goal planning agent for helping users with their diet and nutrition."""
 
 from typing import Dict, Any, List
-from langchain_core.messages import AIMessage, SystemMessage, AnyMessage
-from langgraph.types import interrupt
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph_app.orchestrator.state import GraphState, NodeOutput
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.llm_callback import create_callback_handler
@@ -51,7 +50,6 @@ Help the user define and achieve actionable dietary goals based on their history
 4. CONCISENESS: Keep responses impactful and focused (2-4 sentences).
 5. LANGUAGE: Strict adherence to the user's language ('{lang}'), unless explicitly overridden by their latest message."""
 
-    final_response = ""
     last_error: Exception | None = None
     ai_message = None
     sleep_times = [0.2, 0.5]

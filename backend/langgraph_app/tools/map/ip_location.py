@@ -16,8 +16,8 @@ from langgraph_app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-REDIS_URL = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
-_redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+from langgraph_app.config import config as _app_config
+_redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 
 # In-process cache (since server IP essentially never changes during a container lifecycle)
 _ip_location_cache: Optional[Tuple[float, float]] = None

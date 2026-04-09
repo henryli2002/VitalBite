@@ -8,6 +8,7 @@ are reused across requests rather than re-established per message.
 from __future__ import annotations
 
 from typing import Optional, Dict, Tuple, Any
+import copy
 import os
 import datetime
 import platform
@@ -52,9 +53,6 @@ def inject_dynamic_context(messages: list) -> list:
             for msg in messages
         ]
     except (AttributeError, TypeError):  # pragma: no cover
-        # Fallback for older LangChain versions or unexpected types
-        import copy
-
         messages_copy = copy.deepcopy(messages)
 
     last_message = messages_copy[-1]

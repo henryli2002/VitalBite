@@ -25,8 +25,8 @@ app = FastAPI(title="WABI AI Worker Node", version="1.0.0")
 logger = logging.getLogger("wabi.ai.worker")
 logging.basicConfig(level=logging.INFO)
 
-REDIS_URL = os.environ.get("WABI_REDIS_URL", "redis://localhost:6379/0")
-redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+from langgraph_app.config import config as _app_config
+redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 
 # Strict concurrency limit to prevent API throttling
 MAX_CONCURRENT_WORKERS = 200
