@@ -1,24 +1,21 @@
 FROM python:3.12-slim
 
-WORKDIR /app/backend
+WORKDIR /app
 
 # 1. Cache dependencies (Copy ONLY pyproject.toml)
-COPY backend/pyproject.toml .
-# Create a dummy folder so pip install doesn't fail trying to build the package
-RUN mkdir -p /app/backend/langgraph_app && touch /app/backend/langgraph_app/__init__.py && \
+COPY pyproject.toml .
+# Create dummy packages so pip install doesn't fail trying to build
+RUN mkdir -p /app/src/langgraph_app && touch /app/src/langgraph_app/__init__.py && \
+    mkdir -p /app/src/server && touch /app/src/server/__init__.py && \
     pip install --default-timeout=2000 \
     --retries 10 \
     --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
-    . httpx aiosqlite pydantic "fastapi[all]"
+    . aiosqlite "fastapi[all]"
 
-# 2. Copy the actual application code
-COPY backend/langgraph_app/ /app/backend/langgraph_app/
-COPY frontend/ /app/frontend/
-COPY backend/models.py backend/chat_manager.py backend/db.py backend/web_server.py /app/backend/
-
-# In production, data should be mounted as a volume
-RUN mkdir -p /app/data
+# 2. Copy the actual application code and reinstall in editable mode
+COPY src/ /app/src/
+RUN pip install --no-deps -e .
 
 EXPOSE 8000
-CMD ["uvicorn", "web_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--backlog", "2048", "--timeout-keep-alive", "120"]
+CMD ["uvicorn", "server.web:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--backlog", "2048", "--timeout-keep-alive", "120"]

@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 
 import asyncpg
 
-from chat_manager import HistoryStore
+from server.chat_manager import HistoryStore
 
 logger = logging.getLogger(__name__)
 

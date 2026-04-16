@@ -1,8 +1,8 @@
 """WABI Chat Web Server — FastAPI + WebSocket interface to LangGraph.
 
 Run with:
-    cd /Users/henryli/Desktop/Project/WABI
-    python -m uvicorn web_server:app --host 0.0.0.0 --port 8000 --reload
+    pip install -e .
+    uvicorn server.web:app --host 0.0.0.0 --port 8000 --reload
 """
 
 import asyncio
@@ -14,8 +14,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from models import UserCreate, UserInfo, UserProfile, ChatMessage, WSIncoming, WSOutgoing
-from chat_manager import ChatManager
+from server.models import UserCreate, UserInfo, UserProfile, ChatMessage, WSIncoming, WSOutgoing
+from server.chat_manager import ChatManager
 
 
 
@@ -37,8 +37,8 @@ active_connections: Dict[str, WebSocket] = {}
 # ---------------------------------------------------------------------------
 
 import os
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "../frontend")
+SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(SRC_DIR, "frontend")
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 

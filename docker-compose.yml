@@ -7,16 +7,13 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app/backend
-      - ./frontend:/app/frontend
-      - /app/backend/.venv
-      - /app/backend/__pycache__
+      - ./src:/app/src
     env_file:
       - .env
     environment:
       - WABI_AI_URL=http://wabi-ai:8001/invoke
-      - WABI_REDIS_URL=redis://wabi-redis:6379/0
-      - WABI_DB_URL=postgresql://wabi_user:wabi_password@wabi-postgres:5432/wabi_chat
+      - WABI_REDIS_URL=redis://wabi-redis:6380/0
+      - WABI_DB_URL=postgresql://wabi_user:wabi_password@wabi-postgres:5433/wabi_chat
     depends_on:
       wabi-ai:
         condition: service_started
@@ -42,13 +39,11 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./backend:/app/backend
-      - /app/backend/.venv
-      - /app/backend/__pycache__
+      - ./src:/app/src
     env_file:
       - .env
     environment:
-      - WABI_REDIS_URL=redis://wabi-redis:6379/0
+      - WABI_REDIS_URL=redis://wabi-redis:6380/0
     depends_on:
       wabi-redis:
         condition: service_started
@@ -69,13 +64,13 @@ services:
       POSTGRES_USER: wabi_user
       POSTGRES_PASSWORD: wabi_password
       POSTGRES_DB: wabi_chat
-    command: postgres -c max_connections=500
+    command: postgres -c max_connections=500 -p 5433
     ports:
-      - "5432:5432"
+      - "5433:5433"
     volumes:
       - ./data/pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U wabi_user -d wabi_chat"]
+      test: ["CMD-SHELL", "pg_isready -U wabi_user -d wabi_chat -p 5433"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -86,8 +81,9 @@ services:
   wabi-redis:
     image: redis:7-alpine
     container_name: wabi-redis
+    command: redis-server --port 6380
     ports:
-      - "6379:6379"
+      - "6380:6380"
     volumes:
       - ./data/redisdata:/data
     restart: unless-stopped

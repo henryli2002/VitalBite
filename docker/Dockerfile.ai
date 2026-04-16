@@ -1,18 +1,21 @@
 FROM python:3.12-slim
 
-WORKDIR /app/backend
+WORKDIR /app
 
 # 1. Cache dependencies (Copy ONLY pyproject.toml)
-COPY backend/pyproject.toml .
-RUN mkdir -p /app/backend/langgraph_app && touch /app/backend/langgraph_app/__init__.py && \
+COPY pyproject.toml .
+# Create dummy packages so pip install doesn't fail trying to build
+RUN mkdir -p /app/src/langgraph_app && touch /app/src/langgraph_app/__init__.py && \
+    mkdir -p /app/src/server && touch /app/src/server/__init__.py && \
     pip install --default-timeout=2000 \
     --retries 10 \
     --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     . "fastapi[all]"
-# 2. Copy the actual application code (Code changes will only invalidate from here down)
-COPY backend/langgraph_app/ /app/backend/langgraph_app/
-COPY backend/models.py backend/langgraph_server.py /app/backend/
+
+# 2. Copy the actual application code and reinstall in editable mode
+COPY src/ /app/src/
+RUN pip install --no-deps -e .
 
 EXPOSE 8001
-CMD ["uvicorn", "langgraph_server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1", "--backlog", "1024", "--timeout-keep-alive", "120"]
+CMD ["uvicorn", "server.ai:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1", "--backlog", "1024", "--timeout-keep-alive", "120"]

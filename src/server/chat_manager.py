@@ -129,7 +129,7 @@ class ChatManager:
 
     def __init__(self, store: Optional[HistoryStore] = None):
         if store is None:
-            from db import PostgresHistoryStore
+            from server.db import PostgresHistoryStore
             store = PostgresHistoryStore()
         self.store = store
 
