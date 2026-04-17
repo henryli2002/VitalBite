@@ -178,13 +178,14 @@ class TestAnalyzeFoodImageTool:
         from langgraph_app.tools.food_recognition_tool import analyze_food_image
 
         assert analyze_food_image.name == "analyze_food_image"
-        assert "image_base64" in analyze_food_image.args_schema.model_fields
+        # Phase 2: tool takes a UUID handle instead of inline base64
+        assert "image_uuid" in analyze_food_image.args_schema.model_fields
 
     @pytest.mark.asyncio
-    async def test_returns_error_on_invalid_base64(self):
+    async def test_returns_error_on_missing_user_id(self):
         from langgraph_app.tools.food_recognition_tool import analyze_food_image
 
-        result = await analyze_food_image.ainvoke({"image_base64": "not_valid_base64!!!"})
+        result = await analyze_food_image.ainvoke({"image_uuid": "a" * 32})
         data = json.loads(result)
         assert "error" in data
 

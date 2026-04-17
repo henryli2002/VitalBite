@@ -12,10 +12,15 @@ from typing import Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from server.models import UserCreate, UserInfo, UserProfile, ChatMessage, WSIncoming, WSOutgoing
 from server.chat_manager import ChatManager
+from server.image_store import (
+    save_base64 as image_save_base64,
+    load_image as image_load,
+    format_placeholder,
+)
 
 
 
@@ -86,12 +91,18 @@ async def delete_user(user_id: str):
 
 @app.get("/api/users/{user_id}/history")
 async def get_history(user_id: str):
-    """Get chat history for a user."""
+    """Get chat history for a user.
+
+    Image messages are represented as ``[图片: {uuid}]`` placeholders (optionally
+    with ``| description``). The frontend is responsible for rendering these by
+    fetching ``/api/images/{user_id}/{uuid}``.
+    """
     history = await chat_manager.get_history(user_id)
     out = []
     for msg in history:
         content = msg["content"]
         if isinstance(content, list):
+            # Legacy multimodal rows (pre-Phase 2): collapse to text + inline data URI
             text_parts = []
             for p in content:
                 if p.get("type") == "text":
@@ -102,7 +113,7 @@ async def get_history(user_id: str):
             content_str = "\n\n".join(text_parts)
         else:
             content_str = str(content)
-            
+
         out.append(ChatMessage(
             role=msg["role"],
             content=content_str,
@@ -127,6 +138,26 @@ async def update_profile(user_id: str, body: UserProfile):
     merged = {**existing, **incoming}
     await chat_manager.save_profile(user_id, merged)
     return {"status": "updated", "user_id": user_id, "profile": merged}
+
+
+# ---------------------------------------------------------------------------
+# REST API — Image Registry
+# ---------------------------------------------------------------------------
+
+@app.get("/api/images/{user_id}/{image_uuid}")
+async def serve_image(user_id: str, image_uuid: str):
+    """Serve a stored image by UUID, scoped to user_id."""
+    try:
+        data, mime = image_load(user_id, image_uuid)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID")
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -162,17 +193,18 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
             try:
                 # Build content for LangGraph
                 if incoming.type == "image" and incoming.content:
-                    # Multimodal: image + optional text
-                    content_parts = []
-                    if incoming.text.strip():
-                        content_parts.append({"type": "text", "text": incoming.text})
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{incoming.mime_type};base64,{incoming.content}"
-                        },
-                    })
-                    content = content_parts
+                    # Persist image bytes to the filesystem registry; the DB
+                    # and LLM only see a text placeholder "[图片: {uuid}]".
+                    try:
+                        image_uuid = image_save_base64(
+                            user_id, incoming.content, incoming.mime_type
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to persist image for {user_id}: {e}")
+                        raise
+                    placeholder = format_placeholder(image_uuid)
+                    text = incoming.text.strip()
+                    content = f"{text}\n\n{placeholder}" if text else placeholder
                 else:
                     content = incoming.content
 

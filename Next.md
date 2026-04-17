@@ -7,7 +7,7 @@
 
 ---
 
-## Phase 1: 核心大脑切换 (Basic Agentic Migration)
+## Phase 1: 核心大脑切换 (Basic Agentic Migration) ✅ 已完成
 
 **目标**：彻底废除静态 Workflow，建立 Supervisor 调度机制。
 
@@ -124,7 +124,7 @@ input_guardrail → supervisor_agent (react loop) → output_guardrail → END
 
 ---
 
-## Phase 2: 多模态存储变革 (Image Registry & Migration)
+## Phase 2: 多模态存储变革 (Image Registry & Migration) ✅ 已完成
 
 **目标**：解决数据库 Base64 膨胀问题，实现图文分离与按需回溯。
 

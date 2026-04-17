@@ -15,11 +15,9 @@ from typing import Optional
 from PIL import Image
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
-from langgraph_app.agents.food_recognition.predictor import (
-    decode_base64_image,
-    predict_nutrition,
-)
+from langgraph_app.agents.food_recognition.predictor import predict_nutrition
 from langgraph_app.agents.food_recognition.schemas import FoodDetection
 from langgraph_app.utils.llm_factory import get_llm_client
 from langgraph_app.utils.llm_callback import create_callback_handler
@@ -92,16 +90,11 @@ async def _estimate_nutrition_with_llm(client, detected_items: list) -> list:
         ]
 
 
-async def _run_recognition_pipeline(image_base64: str) -> dict:
+async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
     """Core recognition pipeline: detection -> cropping -> prediction.
 
     Returns structured dict with items, total_nutrition, and nutrition_source.
     """
-    # Decode image
-    if "base64," in image_base64:
-        image_base64 = image_base64.split("base64,")[-1]
-    image_bytes = decode_base64_image(image_base64)
-
     client = get_llm_client(module="food_recognition")
 
     # Step 1: Object detection via LLM
@@ -236,20 +229,77 @@ async def _run_recognition_pipeline(image_base64: str) -> dict:
     }
 
 
+def _build_description(result: dict) -> str:
+    """Short human-readable description for the DB placeholder, e.g. '汉堡+薯条, 850kcal'."""
+    items = result.get("items") or []
+    names = []
+    for it in items:
+        if isinstance(it, dict):
+            name = it.get("name")
+            if name:
+                names.append(str(name))
+    joined = "+".join(names[:3]) if names else "meal"
+    total_cal = result.get("total_calories", 0.0) or 0.0
+    try:
+        cal_str = f"{int(round(float(total_cal)))}kcal"
+    except Exception:
+        cal_str = "?kcal"
+    return f"{joined}, {cal_str}"
+
+
 @tool("analyze_food_image")
-async def analyze_food_image(image_base64: str) -> str:
+async def analyze_food_image(
+    image_uuid: str,
+    config: RunnableConfig = None,
+) -> str:
     """Analyze a food image to detect items and estimate nutritional content.
 
     Args:
-        image_base64: The base64-encoded image string (with or without data URI prefix).
+        image_uuid: The short UUID handle from a ``[图片: {uuid}]`` placeholder
+            in the user's message. The image bytes are loaded from the server's
+            image registry — never passed inline.
 
     Returns:
         A JSON string containing detected food items with per-item and total
         nutritional breakdown (calories, fat, carbs, protein, weight).
     """
     try:
-        result = await _run_recognition_pipeline(image_base64)
-        return json.dumps(result, ensure_ascii=False)
+        from server.image_store import load_image
+        from server.db import PostgresHistoryStore
     except Exception as e:
-        logger.error("analyze_food_image tool failed: %s", e, exc_info=True)
+        logger.error("image_store / db import failed: %s", e)
+        return json.dumps({"error": f"image store unavailable: {e}"})
+
+    user_id = None
+    if config and isinstance(config, dict):
+        user_id = (config.get("configurable") or {}).get("user_id")
+    if not user_id:
+        return json.dumps({"error": "missing user_id in runtime config"})
+
+    image_uuid = (image_uuid or "").strip()
+    if not image_uuid:
+        return json.dumps({"error": "empty image_uuid"})
+
+    try:
+        image_bytes, _mime = load_image(user_id, image_uuid)
+    except FileNotFoundError:
+        return json.dumps({"error": f"image {image_uuid} not found"})
+    except Exception as e:
+        logger.error("load_image failed: %s", e)
+        return json.dumps({"error": f"failed to load image: {e}"})
+
+    try:
+        result = await _run_recognition_pipeline(image_bytes)
+    except Exception as e:
+        logger.error("analyze_food_image pipeline failed: %s", e, exc_info=True)
         return json.dumps({"error": str(e)})
+
+    # Best-effort: enrich the DB placeholder with a short description.
+    try:
+        store = PostgresHistoryStore()
+        description = _build_description(result)
+        await store.update_image_description(user_id, image_uuid, description)
+    except Exception as e:
+        logger.warning("Failed to update image description placeholder: %s", e)
+
+    return json.dumps(result, ensure_ascii=False)

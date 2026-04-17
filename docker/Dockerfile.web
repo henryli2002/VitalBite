@@ -1,21 +1,33 @@
-FROM python:3.12-slim
+# syntax=docker/dockerfile:1.7
+# Build the VitalBite web image with uv for fast, cached installs.
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_SYSTEM_PYTHON=1 \
+    UV_HTTP_TIMEOUT=600 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# 1. Cache dependencies (Copy ONLY pyproject.toml)
-COPY pyproject.toml .
-# Create dummy packages so pip install doesn't fail trying to build
-RUN mkdir -p /app/src/langgraph_app && touch /app/src/langgraph_app/__init__.py && \
-    mkdir -p /app/src/server && touch /app/src/server/__init__.py && \
-    pip install --default-timeout=2000 \
-    --retries 10 \
-    --no-cache-dir \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
-    . aiosqlite "fastapi[all]"
+# 1. Dependency layer — only invalidated when pyproject.toml changes.
+#    Dummy package roots let uv resolve the local project without the real code.
+COPY pyproject.toml ./
+RUN mkdir -p /app/src/langgraph_app /app/src/server \
+    && touch /app/src/langgraph_app/__init__.py /app/src/server/__init__.py
 
-# 2. Copy the actual application code and reinstall in editable mode
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv,sharing=shared \
+    uv pip install --system \
+        --index-strategy unsafe-best-match \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        . "fastapi[all]" aiosqlite
+
+# 2. Application layer — reinstalls only the project metadata when src/ changes.
 COPY src/ /app/src/
-RUN pip install --no-deps -e .
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv,sharing=shared \
+    uv pip install --system --no-deps -e .
 
 EXPOSE 8000
 CMD ["uvicorn", "server.web:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--backlog", "2048", "--timeout-keep-alive", "120"]

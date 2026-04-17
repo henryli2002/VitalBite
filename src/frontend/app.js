@@ -1239,7 +1239,21 @@ function renderMarkdown(text) {
         }
     });
 
-    // Images
+    // Phase 2 image placeholders: [图片: {uuid}] or [图片: {uuid} | description]
+    // Served via GET /api/images/{user_id}/{uuid}. A description, if present,
+    // is shown as a small caption beneath the image.
+    html = html.replace(/\[图片:\s*([a-f0-9]{32})(?:\s*\|\s*([^\]]*))?\]/gi, (match, uuid, desc) => {
+        const uid = state.activeUserId;
+        if (!uid) return match;
+        const src = `/api/images/${encodeURIComponent(uid)}/${uuid.toLowerCase()}`;
+        const trimmedDesc = desc ? desc.trim() : '';
+        const caption = trimmedDesc
+            ? `<div class="img-caption">${trimmedDesc}</div>`
+            : '';
+        return `<figure class="chat-image"><img src="${src}" alt="image" loading="lazy"/>${caption}</figure>`;
+    });
+
+    // Legacy Markdown images (data URIs from pre-Phase 2 history, or local echo)
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 300px; max-height: 300px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin-top: 8px;"/>');
 
     // Headers

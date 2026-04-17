@@ -152,6 +152,43 @@ class PostgresHistoryStore(HistoryStore):
             )
             return [dict(row) for row in rows]
 
+    async def update_image_description(
+        self, user_id: str, image_uuid: str, description: str
+    ) -> int:
+        """Rewrite the most recent `[图片: {uuid}]` placeholder to include a description.
+
+        Returns the number of rows affected. Uses a LIKE search constrained by
+        user_id; also re-matches existing placeholders with old descriptions so
+        repeated calls overwrite rather than duplicate.
+        """
+        import re as _re
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, content FROM messages "
+                "WHERE user_id = $1 AND content LIKE $2 "
+                "ORDER BY id DESC LIMIT 5",
+                user_id,
+                f"%{image_uuid}%",
+            )
+            pattern = _re.compile(
+                rf"\[图片:\s*{_re.escape(image_uuid)}(?:\s*\|\s*[^\]]*)?\]",
+                _re.IGNORECASE,
+            )
+            new_placeholder = f"[图片: {image_uuid} | {description}]"
+            updates: List[tuple[int, str]] = []
+            for row in rows:
+                content = row["content"] or ""
+                if pattern.search(content):
+                    updates.append((row["id"], pattern.sub(new_placeholder, content)))
+            for msg_id, new_content in updates:
+                await conn.execute(
+                    "UPDATE messages SET content = $1 WHERE id = $2",
+                    new_content,
+                    msg_id,
+                )
+            return len(updates)
+
     async def delete_history(self, user_id: str) -> None:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -224,6 +261,11 @@ class PostgresHistoryStore(HistoryStore):
             async with conn.transaction():
                 await conn.execute("DELETE FROM messages WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM users WHERE user_id = $1", user_id)
+            try:
+                from server.image_store import delete_user_images
+                delete_user_images(user_id)
+            except Exception as e:
+                logger.warning("Failed to clean image directory for %s: %s", user_id, e)
             return True
 
     # ------------------------------------------------------------------

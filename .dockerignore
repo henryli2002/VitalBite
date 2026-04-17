@@ -31,3 +31,9 @@ Thumbs.db
 data/
 logs/
 .langgraph/
+
+# Backups & caches
+backups/
+tests/
+**/.mypy_cache
+**/.uv_cache
