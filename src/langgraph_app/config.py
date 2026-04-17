@@ -107,6 +107,10 @@ class Config:
         },
     }
 
+    # Supervisor Agent
+    USE_SUPERVISOR: bool = os.getenv("USE_SUPERVISOR", "1") == "1"
+    MAX_TOOL_CALLS_PER_TURN: int = int(os.getenv("MAX_TOOL_CALLS_PER_TURN", "5"))
+
     # Redis
     REDIS_URL: str = os.getenv("WABI_REDIS_URL", "redis://redis:6379/0")
 

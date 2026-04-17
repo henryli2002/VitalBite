@@ -37,6 +37,44 @@ def build_thinking_partial(
     node_name: str, node_output: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
     """Build frontend-friendly partial thinking payload for each key node."""
+
+    # --- Supervisor architecture nodes ---
+    if node_name == "supervisor":
+        # The supervisor node wraps the react agent; its output contains messages
+        # including tool calls and responses. Extract useful info.
+        messages = node_output.get("messages", []) or []
+        if not messages:
+            return None
+        last = messages[-1] if messages else None
+        if last is None:
+            return None
+        # Check for tool call messages (AIMessage with tool_calls)
+        tool_calls = getattr(last, "tool_calls", None)
+        if tool_calls:
+            tool_names = [tc.get("name", "unknown") for tc in tool_calls]
+            return {
+                "status": "partial",
+                "node": "tool_call",
+                "analysis": {"reasoning": f"Calling tools: {', '.join(tool_names)}"},
+            }
+        return None
+
+    if node_name == "tools":
+        # Tool execution results from the react agent
+        messages = node_output.get("messages", []) or []
+        if messages:
+            last = messages[-1]
+            content = getattr(last, "content", "")
+            if content:
+                snippet = str(content)[:200]
+                return {
+                    "status": "partial",
+                    "node": "tool_result",
+                    "analysis": {"reasoning": f"Tool returned: {snippet}"},
+                }
+        return None
+
+    # --- Legacy architecture nodes ---
     if node_name in ("router", "intent_router"):
         analysis = node_output.get("analysis")
         if analysis:

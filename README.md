@@ -91,9 +91,9 @@ GEMINI_MODEL_NAME="gemini-2.5-flash-lite"
 # Maps
 GOOGLE_MAPS_API_KEY="..."
 
-# 基础设施
-WABI_REDIS_URL="redis://wabi-redis:6379/0"
-WABI_DB_URL="postgresql://wabi_user:wabi_password@wabi-postgres:5432/wabi_chat"
+# 基础设施 (Docker Compose 默认配置)
+WABI_REDIS_URL="redis://wabi-redis:6380/0"
+WABI_DB_URL="postgresql://wabi_user:wabi_password@wabi-postgres:5433/wabi_chat"
 ```
 
 ### 2. 启动
@@ -106,50 +106,51 @@ docker-compose up -d --build
 |------|------|
 | 前端 Web 界面 | http://localhost:8000 |
 | AI Worker 健康检查 | http://localhost:8001/health |
+| 独立数据库 (PostgreSQL) | localhost:5433 |
+| 独立缓存/队列 (Redis) | localhost:6380 |
 
 ---
 
 ## 目录结构
 
+系统经过标准重构，采用统一的 `src` 顶级包管理结构。
+
 ```
 WABI/
-├── backend/
-│   ├── langgraph_app/
-│   │   ├── agents/
+├── src/
+│   ├── langgraph_app/             # AI 核心业务逻辑 (LangGraph)
+│   │   ├── agents/                # 各类 Agent (将降级为 Tools)
 │   │   │   ├── chitchat/          # 通用对话
 │   │   │   ├── goalplanning/      # 营养目标规划
-│   │   │   ├── food_recognition/  # 多模态食物识别（4 步流水线）
-│   │   │   └── food_recommendation/ # 地理位置餐厅推荐
-│   │   ├── orchestrator/
+│   │   │   ├── food_recognition/  # 多模态食物识别
+│   │   │   └── food_recommendation/ # 餐厅推荐
+│   │   ├── orchestrator/          # 工作流编排
 │   │   │   ├── graph.py           # LangGraph 工作流定义
 │   │   │   ├── state.py           # GraphState schema
-│   │   │   └── nodes/
-│   │   │       ├── router.py      # 意图路由（流式）
-│   │   │       └── guardrails/    # 输入/输出安全检测
-│   │   ├── tools/
-│   │   │   └── map/               # IP 地理位置 · Google Maps
-│   │   ├── utils/
-│   │   │   ├── llm_factory.py     # LLM 单例缓存工厂
-│   │   │   ├── llm_callback.py    # Token 使用追踪 Callback
-│   │   │   └── semaphores.py      # 并发背压信号量
-│   │   └── config.py              # 统一配置管理
-│   ├── langgraph_server.py        # AI Worker 入口（Consumer）
-│   ├── web_server.py              # FastAPI API 入口（Producer）
-│   ├── chat_manager.py            # 会话流控 · Redis 调度 · 两阶段 goalplanning
-│   ├── db.py                      # PostgreSQL 存储适配层
-│   └── models.py                  # Pydantic 数据模型
-├── frontend/                      # 原生 JS 前端
+│   │   │   └── nodes/             # 路由与安全网关
+│   │   ├── tools/                 # 外部工具 (Maps, IP, etc.)
+│   │   └── utils/                 # 通用脚手架 (重试, 并发, LLM 工厂)
+│   ├── server/                    # Web / Worker 服务入口
+│   │   ├── web.py                 # FastAPI API 入口 (WebSocket)
+│   │   ├── ai.py                  # AI Worker 独立进程 (Dispatcher)
+│   │   ├── chat_manager.py        # 会话管理与队列分发
+│   │   ├── db.py                  # PostgreSQL 存储适配层
+│   │   └── models.py              # Pydantic 数据模型
+│   └── frontend/                  # 原生 JS/HTML 前端静态文件
 ├── eval/                          # 模型评估框架
 ├── tests/                         # 负载测试 · 准确率测试
-├── Next.md                        # 下一步工程计划
-└── docker/
-    ├── Dockerfile.ai
-    └── Dockerfile.web
+├── docker/                        # 容器化配置
+└── Next.md                        # 系统演进路线与架构蓝图
 ```
 
 ---
 
 ## 更新日志
+
+### v3.2.0 (2026-04)
+- **优雅重试与降级 (Retry & Cascade)**：实现了带有 Full Jitter 的指数退避重试 (`utils/retry.py`)，及基于 Llamacpp 的降级策略 (`utils/cascade.py`)，极大提升了对外部 API (LLM/Google Maps) 限流和超时的容错率。
+- **并发调度器重构**：废弃了 200 个低效常驻 async worker，采用单 Dispatcher 监听队列，结合 `semaphores.py` 动态控制并发，消除了线程阻塞风险，提升了系统的垂直扩展能力。
+- **降级 UI 标记**：LLM 降级触发时自动通过 `additional_kwargs["degraded"]` 和 `additional_kwargs["nutrition_source"]` 透传状态，为前端展示弱网/预估角标提供支持。
 
 ### v2.3.0 (2026-04)
 - 时区全链路：前端传 IANA 时区 → IP 自动回落 → 影响餐次判断、recognition 推荐评估、3AM 日期边界

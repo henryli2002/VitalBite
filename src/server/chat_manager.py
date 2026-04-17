@@ -203,30 +203,35 @@ class ChatManager:
         user_info = await self.store.get_user(user_id)
         user_name = user_info.get("name") if user_info else None
 
-        # --- Phase 1: Quick intent detection with today's history ---
-        day_boundary = _get_day_boundary((user_context or {}).get("timezone"))
-        load_method = getattr(self.store, "load_history_since", None)
-        if load_method:
-            today_history = await load_method(user_id, day_boundary)
+        # --- Load conversation history ---
+        # With the Supervisor architecture, we load recent messages instead of
+        # the old two-phase (today's history �� full history for goalplanning).
+        # The Supervisor can query meal_logs via tools for historical data.
+        load_recent = getattr(self.store, "load_recent_messages", None)
+        if load_recent:
+            recent_history = await load_recent(user_id, limit=50)
         else:
-            today_history = await self.store.load_history(user_id)
+            # Fallback: load today's history (legacy stores)
+            day_boundary = _get_day_boundary((user_context or {}).get("timezone"))
+            load_method = getattr(self.store, "load_history_since", None)
+            if load_method:
+                recent_history = await load_method(user_id, day_boundary)
+            else:
+                recent_history = await self.store.load_history(user_id)
 
-        for msg in today_history:
+        for msg in recent_history:
             try:
                 if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
                     msg["content"] = json.loads(msg["content"])
             except Exception:
                 pass
 
-        today_messages = self._build_langchain_messages(today_history)
-
         # --- Payload Construction for Microservice ---
         session_id = f"web_{user_id}_{int(time.time())}"
         invocation_id = f"{user_id}_{int(time.time() * 1000)}"
 
-        # Prepare base payload with simple serializable dicts instead of LangChain objects
         payload = {
-            "messages": today_history,
+            "messages": recent_history,
             "session_id": session_id,
             "user_id": user_id,
             "user_name": user_name,
@@ -242,14 +247,12 @@ class ChatManager:
             response_channel = payload["response_channel"]
             pubsub = redis_client.pubsub()
             await pubsub.subscribe(response_channel)
-            
+
             logger.info(f"[{user_id}] Pushing request to worker queue (wabi_ai_queue)...")
             await redis_client.rpush("wabi_ai_queue", json.dumps(payload))
-            
-            ai_text = "Sorry, I could not process your request."
-            detected_intent = "chitchat"
 
-            phase_1_done = False
+            ai_text = "Sorry, I could not process your request."
+
             try:
                 async with asyncio.timeout(120.0):
                     async for message in pubsub.listen():
@@ -265,75 +268,21 @@ class ChatManager:
                             }
                             continue
 
-                        # Check if it was a backend Node Crash
                         if isinstance(data, dict) and data.get("status") == "error":
                             error_msg = data.get("message", "Unknown Backend Crash")
                             logger.error(f"Intercepted backend crash for user {user_id}: {error_msg}")
                             ai_text = f"🔴 fatal error: {error_msg}"
-                            phase_1_done = True
                             break
 
-                        # Parse the new nested JSON payload from langgraph_server.py
                         msgs = data.get("messages", [])
                         if msgs and isinstance(msgs, list):
                             ai_text = msgs[-1].get("content", ai_text)
                         else:
                             ai_text = data.get('ai_text', ai_text)
-
-                        detected_intent = data.get("analysis", {}).get("intent", data.get("detected_intent", detected_intent))
-                        phase_1_done = True
                         break
             except TimeoutError:
-                logger.warning(f"[{user_id}] Timed out waiting for Phase 1 response after 120s")
-            
-            # Goal planning: re-run with full history for complete context
-            if phase_1_done and detected_intent == "goalplanning":
-                logger.info(f"[{user_id}] Intent is goalplanning. Pushing Phase 2 job with FULL history.")
-                full_history = await self.store.load_history(user_id)
-                for msg in full_history:
-                    try:
-                        if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
-                            msg["content"] = json.loads(msg["content"])
-                    except Exception:
-                        pass
+                logger.warning(f"[{user_id}] Timed out waiting for response after 120s")
 
-                full_payload = {
-                    **payload,
-                    "messages": full_history,
-                    "thread_id": f"{user_id}_full_{int(time.time() * 1000)}",
-                }
-                await redis_client.rpush("wabi_ai_queue", json.dumps(full_payload))
-
-                try:
-                    async with asyncio.timeout(120.0):
-                        async for message in pubsub.listen():
-                            if message.get('type') != 'message':
-                                continue
-                            data = json.loads(message['data'])
-
-                            if data.get("status") == "partial":
-                                yield {
-                                    "type": "thinking",
-                                    "node": data.get("node"),
-                                    "analysis": data.get("analysis", {})
-                                }
-                                continue
-
-                            if isinstance(data, dict) and data.get("status") == "error":
-                                error_msg = data.get("message", "Unknown Backend Crash")
-                                logger.error(f"Intercepted backend crash (Phase 2) for user {user_id}: {error_msg}")
-                                ai_text = f"🔴 fatal error (Goalplanning): {error_msg}"
-                                break
-
-                            p2_messages = data.get("messages", [])
-                            if p2_messages and isinstance(p2_messages, list):
-                                ai_text = p2_messages[-1].get("content", ai_text)
-                            else:
-                                ai_text = data.get('ai_text', ai_text)
-                            break
-                except TimeoutError:
-                    logger.warning(f"[{user_id}] Timed out waiting for Phase 2 response after 120s")
-            
             await pubsub.unsubscribe(response_channel)
 
         except Exception as e:

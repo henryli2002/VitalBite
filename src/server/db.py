@@ -16,7 +16,9 @@ from server.chat_manager import HistoryStore
 
 logger = logging.getLogger(__name__)
 
-DB_URL = os.environ.get("WABI_DB_URL", "postgresql://wabi_user:wabi_password@localhost:5432/wabi_chat")
+DB_URL = os.environ.get(
+    "WABI_DB_URL", "postgresql://wabi_user:wabi_password@localhost:5432/wabi_chat"
+)
 
 
 class PostgresHistoryStore(HistoryStore):
@@ -30,11 +32,11 @@ class PostgresHistoryStore(HistoryStore):
         if self._pool is None:
             # Create the connection pool lazily
             self._pool = await asyncpg.create_pool(
-                self._db_url, 
-                min_size=1, 
+                self._db_url,
+                min_size=1,
                 max_size=50,
-                max_inactive_connection_lifetime=300
-            ) # type: ignore
+                max_inactive_connection_lifetime=300,
+            )  # type: ignore
         return self._pool
 
     async def init_db(self) -> None:
@@ -61,8 +63,25 @@ class PostgresHistoryStore(HistoryStore):
                 )
             """)
             await conn.execute("""
+                CREATE TABLE IF NOT EXISTS meal_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    timestamp TEXT NOT NULL,
+                    total_calories REAL DEFAULT 0.0,
+                    protein REAL DEFAULT 0.0,
+                    carbs REAL DEFAULT 0.0,
+                    fat REAL DEFAULT 0.0,
+                    items_json TEXT DEFAULT '{}',
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_messages_user_ts
                 ON messages(user_id, timestamp)
+            """)
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_meal_logs_user_ts
+                ON meal_logs(user_id, timestamp)
             """)
 
     # ------------------------------------------------------------------
@@ -81,11 +100,17 @@ class PostgresHistoryStore(HistoryStore):
                     VALUES ($1, $2, $3, $4, '{}')
                     ON CONFLICT (user_id) DO UPDATE SET last_active = EXCLUDED.last_active
                     """,
-                    user_id, f"User {user_id[-4:]}", timestamp, timestamp
+                    user_id,
+                    f"User {user_id[-4:]}",
+                    timestamp,
+                    timestamp,
                 )
                 await conn.execute(
                     "INSERT INTO messages (user_id, role, content, timestamp) VALUES ($1, $2, $3, $4)",
-                    user_id, role, content, timestamp
+                    user_id,
+                    role,
+                    content,
+                    timestamp,
                 )
 
     async def load_history(self, user_id: str) -> List[Dict[str, Any]]:
@@ -93,7 +118,7 @@ class PostgresHistoryStore(HistoryStore):
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT role, content, timestamp FROM messages WHERE user_id = $1 ORDER BY id ASC",
-                user_id
+                user_id,
             )
             return [dict(row) for row in rows]
 
@@ -106,7 +131,24 @@ class PostgresHistoryStore(HistoryStore):
             rows = await conn.fetch(
                 "SELECT role, content, timestamp FROM messages "
                 "WHERE user_id = $1 AND timestamp >= $2 ORDER BY id ASC",
-                user_id, since_ts
+                user_id,
+                since_ts,
+            )
+            return [dict(row) for row in rows]
+
+    async def load_recent_messages(
+        self, user_id: str, limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Load the most recent N messages for a user."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT role, content, timestamp FROM "
+                "(SELECT role, content, timestamp, id FROM messages "
+                "WHERE user_id = $1 ORDER BY id DESC LIMIT $2) sub "
+                "ORDER BY id ASC",
+                user_id,
+                limit,
             )
             return [dict(row) for row in rows]
 
@@ -143,9 +185,7 @@ class PostgresHistoryStore(HistoryStore):
     async def get_user(self, user_id: str) -> Dict[str, Any]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM users WHERE user_id = $1", user_id
-            )
+            row = await conn.fetchrow("SELECT * FROM users WHERE user_id = $1", user_id)
             if row:
                 u_dict = dict(row)
                 u_dict.pop("profile_json", None)
@@ -159,7 +199,11 @@ class PostgresHistoryStore(HistoryStore):
             await conn.execute(
                 "INSERT INTO users (user_id, name, created_at, last_active, profile_json) "
                 "VALUES ($1, $2, $3, $4, $5)",
-                user_id, name, now, now, "{}"
+                user_id,
+                name,
+                now,
+                now,
+                "{}",
             )
         return {
             "user_id": user_id,
@@ -192,7 +236,8 @@ class PostgresHistoryStore(HistoryStore):
         async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE users SET profile_json = $1 WHERE user_id = $2",
-                json.dumps(profile, ensure_ascii=False), user_id
+                json.dumps(profile, ensure_ascii=False),
+                user_id,
             )
 
     async def load_profile(self, user_id: str) -> Dict[str, Any]:
@@ -210,3 +255,61 @@ class PostgresHistoryStore(HistoryStore):
                         "Failed to parse profile JSON for %s: %s", user_id, e
                     )
             return {}
+
+    # ------------------------------------------------------------------
+    # Meal Logs management
+    # ------------------------------------------------------------------
+
+    async def save_meal_log(self, user_id: str, meal_data: Dict[str, Any]) -> int:
+        """Save a confirmed meal log. Returns the inserted ID."""
+        pool = await self._get_pool()
+        timestamp = meal_data.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        async with pool.acquire() as conn:
+            row_id = await conn.fetchval(
+                """
+                INSERT INTO meal_logs 
+                (user_id, timestamp, total_calories, protein, carbs, fat, items_json, metadata_json)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id
+                """,
+                user_id,
+                timestamp,
+                float(meal_data.get("total_calories", 0.0)),
+                float(meal_data.get("protein", 0.0)),
+                float(meal_data.get("carbs", 0.0)),
+                float(meal_data.get("fat", 0.0)),
+                json.dumps(meal_data.get("items", []), ensure_ascii=False),
+                json.dumps(meal_data.get("metadata", {}), ensure_ascii=False),
+            )
+            return row_id
+
+    async def load_meal_logs(self, user_id: str, since_ts: str) -> List[Dict[str, Any]]:
+        """Load structured meal logs for a user since a given ISO timestamp."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, timestamp, total_calories, protein, carbs, fat, items_json, metadata_json
+                FROM meal_logs 
+                WHERE user_id = $1 AND timestamp >= $2
+                ORDER BY timestamp ASC
+                """,
+                user_id,
+                since_ts,
+            )
+
+            results = []
+            for row in rows:
+                log_dict = dict(row)
+                try:
+                    log_dict["items"] = json.loads(log_dict.pop("items_json"))
+                    log_dict["metadata"] = json.loads(log_dict.pop("metadata_json"))
+                except Exception as e:
+                    logger.warning(
+                        "Failed to parse JSON for meal_log %s: %s", row["id"], e
+                    )
+                    log_dict["items"] = []
+                    log_dict["metadata"] = {}
+                results.append(log_dict)
+
+            return results

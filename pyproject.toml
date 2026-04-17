@@ -2,7 +2,7 @@
 name = "vitalbite"
 version = "2.1.0"
 description = "Gemini-powered LangGraph Orchestrator"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "langgraph>=0.2.0",
     "langchain>=0.3.0",

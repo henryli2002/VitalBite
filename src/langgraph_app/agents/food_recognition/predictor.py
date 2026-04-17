@@ -91,6 +91,11 @@ def predict_nutrition(image_bytes: bytes) -> Dict[str, float]:
     }
 
 
+def decode_base64_image(b64_str: str) -> bytes:
+    """Decode a raw base64 string (no data-URI prefix) into image bytes."""
+    return base64.b64decode(b64_str)
+
+
 def extract_image_bytes(messages) -> bytes:
     for msg in reversed(messages):
         if (
