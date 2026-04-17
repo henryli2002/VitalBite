@@ -1,235 +1,315 @@
-# WABI — Next Steps
+# WABI — Supervisor Agent 迁移路线图
 
-本文档基于当前代码库的工程审查，按优先级列出待完成事项。
+本文档定义�� WABI Chat 系统从静态 Router + Workflow 架构迁移至 Supervisor Agent + Tools 架构的分阶段实施计划。
 
----
-
-## 已完成
-
-| 项目 | 内容 |
-|------|------|
-| P1.1 | 删除无用导入与死变量 |
-| P1.2 | 统一 Redis 默认 URL → `config.REDIS_URL` |
-| P1.3 | 局部 import 提升至模块顶部 |
-| 2.4 | Pub/Sub 轮询 → `pubsub.listen()` + `asyncio.timeout` |
-| P4 | `message_timestamps` → `additional_kwargs["timestamp"]` |
+当前架构：`input_guardrail → router → [4个独立Agent之一] → output_guardrail → END`
+目标架构：`input_guardrail → supervisor_agent (react loop + tools) → output_guardrail → END`
 
 ---
 
-## Priority 1 — 重试机制与优雅降级
+## Phase 1: 核心大脑切换 (Basic Agentic Migration)
 
-### 1.1 当前问题全景
+**目标**：彻底废除静态 Workflow，建立 Supervisor 调度机制。
 
-对所有可失败子单元的审计结果：
+### 行动 1.1: 创建 Tool 目录，封装业务 Tool
 
-| 位置 | 子单元 | 重试 | 优雅降级 |
-|------|--------|------|----------|
-| `guardrails/nodes.py` | LLM safety check | 3 次，但 `sleep(1)` 不统一 | ✓ 失败默认 safe |
-| `router.py` | LLM stream | ✓ 3 次，固定间隔 | ✓ fallback chitchat |
-| `recognition` Step 2 | LLM 目标检测 | ✗ 单次 | △ 直接跳全图，无重试 |
-| `recognition` Step 3 | 本地模型预测 | ✗ | ✗ 直接返回错误消息 |
-| `recognition` Step 4 | LLM 汇总 | ✗ | ✗ 直接返回错误消息 |
-| `recommendation` | LLM 参数提取 | ✓ 3 次，固定间隔 | — |
-| `recommendation` | Google Maps HTTP | ✗ | ✗ 静默返回 [] |
-| `recommendation` | LLM 格式化 | ✓ 3 次，固定间隔 | — |
-| `chitchat` | LLM | ✓ 3 次，固定间隔 | ✗ hardcoded 假响应 |
-| `goalplanning` | LLM | ✓ 3 次，固定间隔 | ✗ hardcoded 假响应 |
+**analyze_food_image Tool** — `src/langgraph_app/tools/food_recognition_tool.py`
 
-### 1.2 重试：指数退避 + Full Jitter
+从 `agents/food_recognition/agent.py` 中剥离 Step 1-3（图片提取、目标检测、裁剪预测）为独立 `@tool`：
+- 输入：`image_base64: str`（显式传入）
+- 输出：`{"items": [...], "total_calories": N, "total_nutrition": {...}, "nutrition_source": "local_model"|"llm_estimate"}`
+- **不生成自然语言总结**（交给 Supervisor 自己包装语言）
+- 保留 `@with_semaphore("recognition")` 并发控制
+- 复用现有函数：`predict_nutrition()`、`_estimate_nutrition_with_llm()`、`FoodDetection` schema
+- 新增 `decode_base64_image(b64_str: str) -> bytes` 在 `predictor.py` 中（替代从 messages 扫描 base64 的旧逻辑）
 
-当前所有节点用固定延迟 `[0.2, 0.5]`。固定延迟在高并发下有 thundering herd 问题——多个请求同时失败后在完全相同的时刻重试，第二波冲击与第一波等强。
+**search_restaurants Tool** — `src/langgraph_app/tools/recommendation_tool.py`
 
-**工业标准（AWS/Google/Netflix）**：指数退避 + full jitter：
+从 `agents/food_recommendation/agent.py` 中剥离搜索逻辑：
+- 输入：`query: str`, `cuisine_type: Optional[str]`, `lat: Optional[float]`, `lng: Optional[float]`, `radius_km: float = 5.0`, `max_results: int = 5`
+- 输出：原始餐厅 JSON 列表
+- **不做 LLM query 提取**（Supervisor 自己从对话中理解意图直接传参）
+- **不做 LLM 格式化**（Supervisor 自己包装语言推荐给用户）
+- 直接调用已有的 `search_restaurants_tool` (`tools/tools.py`)
+- 位置回退逻辑（frontend GPS → IP geolocation）移入 Tool 内部
 
-```python
-# utils/retry.py
-import random, asyncio
+**涉及文件**：
+- 新建：`src/langgraph_app/tools/food_recognition_tool.py`
+- 新建：`src/langgraph_app/tools/recommendation_tool.py`
+- 修改：`src/langgraph_app/agents/food_recognition/predictor.py` — 新增 `decode_base64_image()`
+- 修改：`src/langgraph_app/tools/__init__.py` — 导出新 Tool
 
-async def with_retry(coro_fn, attempts=3, base=0.5, cap=10.0, fallback=_RAISE):
-    """
-    指数退避 + full jitter。
-    sleep = random(0, min(cap, base * 2 ** attempt))
-    fallback: 耗尽后返回该值；不传则重新抛出最后一个异常。
-    """
-    last_err = None
-    for attempt in range(attempts):
-        try:
-            return await coro_fn()
-        except Exception as e:
-            last_err = e
-            if attempt < attempts - 1:
-                sleep = random.uniform(0, min(cap, base * (2 ** attempt)))
-                await asyncio.sleep(sleep)
-    if fallback is _RAISE:
-        raise last_err
-    return fallback
+### 行动 1.2: 编写 Supervisor
+
+**文件**：`src/langgraph_app/orchestrator/supervisor.py`
+
+Supervisor 是一个 react loop（LLM 调用 → 判断是否需要 Tool → 执行 Tool → 结果喂回 → 再次 LLM 调用 → 直到无 Tool 调用或达到上限）。
+
+**System Prompt 构建**（注入信息）：
+- `build_profile_context(user_profile)` — 用户基本信息（提取公共函数到 `utils/agent_utils.py`，消除 5 处重复）
+- `behavioral_notes` — 长期画像（Phase 4 才有数据，先预留占位）
+- 当前时间 + 餐时判断（复用 router.py 中 meal time 检测逻辑）
+- TDEE 估算（复用 `_calculate_tdee()`，移至 `utils/agent_utils.py`）
+- 语言检测（复用 `get_dominant_language()`）
+
+**Prompt 核心指令**：
+```
+你是 WABI，一个全局健康规划师。
+用户信息：{profile_context}
+长期特征：{behavioral_notes}
+当前时间：{current_time}，餐时：{meal_time}
+每日热量需求：{daily_cal_ref}
+
+规则：
+1. 收到食物图片 → 必须调用 analyze_food_image，然后基于结果生成营养总结表格
+2. 用户找餐厅 → 调用 search_restaurants
+3. 普通闲聊 / 目标规划 → 直接回复，不调用工具
+4. 复合需求 → 可连续调用多个工具
+5. 回复语言跟随用户
 ```
 
-不同类别的 `base` 参数：
+**安全控制**：
+- `MAX_TOOL_CALLS_PER_TURN = 5` — 超过强制生成回复
+- Tool 失败不崩溃，返回 `{"error": "..."}` 给 Supervisor，由它决定告知用户还是降级处理
+- 总超时 60s
 
-| 类别 | base | cap | 说明 |
-|------|------|-----|------|
-| 轻量 LLM（chitchat、goalplanning、router、guardrails） | 0.3 | 5.0 | 请求小，限速恢复快 |
-| 重量 LLM（recognition Step 2/4，含图片） | 0.8 | 15.0 | 图片请求 token 量大，429 恢复慢 |
-| 外部 HTTP（Google Maps） | 1.0 | 20.0 | 外部服务 SLA 不可控 |
+**Tool 获取 user_id/user_context 的方式**：通过 LangGraph `RunnableConfig.configurable` 传递，不作为 Tool 参数。
 
-本地模型（`predict_nutrition`）不适用退避——它是 CPU 同步调用，失败原因是内存/模型问题，不是瞬时限速，见 §1.3。
+**涉及文件**：
+- 新建：`src/langgraph_app/orchestrator/supervisor.py`
+- 新建：`src/langgraph_app/utils/agent_utils.py` — `build_profile_context()`, `_calculate_tdee()`, `detect_meal_time()`
 
-### 1.3 降级：模型 Cascade，而非写死字符串
+### 行动 1.3: 重写 graph.py
 
-当前 chitchat/goalplanning 的最终 fallback 是：
-```python
-"您好！我可以帮您识别食物图片或推荐餐厅。请告诉我您需要什么帮助"
+将线性 DAG 替换为 Agent Node ↔ Tool Node 循环结构：
+```
+input_guardrail → supervisor_agent (react loop) → output_guardrail → END
 ```
 
-这是一个**假响应**——完全无视了用户刚才说了什么，用一个通用问候掩盖服务失败。
+**Feature Flag**：`USE_SUPERVISOR` 环境变量（默认 `1`，保留老图代码可切回 `0`）。
 
-**正确设计**：主力模型 → 降级模型 → 诚实告知
+**State 简化** — 新建 `supervisor_state.py`：
+- 保留：`messages`, `user_id`, `user_name`, `user_profile`, `user_context`, `response_channel`, `analysis`, `debug_logs`
+- 移除：`recognition_result`, `recommendation_result`, `meal_time`（变为 Tool 内部关注点）
 
-```
-Primary (Gemini 2.5 Flash / configured)
-    ↓ 重试耗尽
-Fallback (llamacpp 本地模型)
-    ↓ 也失败 or 不可用
-Honest error: "服务暂时不可用，请稍后再试"
-```
+**涉及文件**：
+- 修改：`src/langgraph_app/orchestrator/graph.py`
+- 新建：`src/langgraph_app/orchestrator/supervisor_state.py`
+- 修改：`src/langgraph_app/config.py` — 添加 `USE_SUPERVISOR`、`MAX_TOOL_CALLS_PER_TURN`
 
-**llamacpp 的上下文限制处理**：
+### 行动 1.4: 修改 ai.py 和 chat_manager.py 适配
 
-llamacpp 上下文窗口短。降级时不能直接传全量历史，需截断：
+**ai.py**：
+- 扩展 `build_thinking_partial()` 处理 Supervisor 的 tool_call / tool_result 事件
+- `process_task()` 的 `initial_state` 对应新 SupervisorState
 
-```python
-# config.py 新增
-FALLBACK_LLM_MAX_HISTORY_TURNS: int = int(os.getenv("FALLBACK_LLM_MAX_HISTORY_TURNS", "5"))
-```
+**chat_manager.py**：
+- **删除 Phase 2 goalplanning 重跑逻辑**（两阶段处理在 Supervisor 架构下不再需要）
+- 历史加载改为最近 N 条消息（如 50 条），取代按时间边界加载
+- payload 增加 `behavioral_notes` 字段
 
-`5 turns = 最近 5 条 HumanMessage + 5 条 AIMessage`，覆盖大部分对话上下文。
+**涉及文件**：
+- 修改：`src/server/ai.py`
+- 修改：`src/server/chat_manager.py`
+- 修改：`src/server/db.py` — 新增 `load_recent_messages(user_id, limit)` 方法
 
-降级时应在响应中附加轻量标记，前端可决定是否显示"降级模式"角标：
-```python
-ai_message.additional_kwargs["degraded"] = True
-```
+### 验收标准
 
-**各节点降级设计**：
-
-| 节点 | 主力失败后 | 降级失败后 |
-|------|-----------|-----------|
-| chitchat | llamacpp（截断至 k 轮） | "服务暂时不可用，请稍后重试" |
-| goalplanning | llamacpp（截断至 k 轮） | "服务暂时不可用，请稍后重试" |
-| recognition Step 2 | 重试 3 次 → `detected_items = []`（全图降级，现有逻辑） | — |
-| recognition Step 3 | 跳过本地模型，改用 LLM 直接按食物名估算营养 | 插入零值占位，汇总时注明"无法获取精确数据" |
-| recognition Step 4 | llamacpp（仅传数值摘要，无图片，上下文极短） | 直接格式化数字，不经 LLM |
-| recommendation LLM | llamacpp（截断至 k 轮） | "服务暂时不可用，请稍后重试" |
-| Google Maps | 重试 3 次 → "无法查询附近餐厅，请稍后再试" | — |
-| guardrails | 默认 safe（现有逻辑合理） | — |
-
-**recognition Step 3 的具体降级**：
-本地模型失败不应走 zeros 路线——已知食物名（Step 2 的检测结果），完全可以让 LLM 给一个基于名称的营养估算。质量低于本地模型，但远好于 zeros 和错误消息。这一降级标记为 `additional_kwargs["nutrition_source"] = "llm_estimate"`，让前端可以显示"估算值"提示。
+1. `USE_SUPERVISOR=1`：发 "你好" → 直接回复，无 Tool 调用
+2. 发一张食物图片 → Supervisor 调用 `analyze_food_image`，基于返回数据自己生成营养总结表格
+3. 发 "推荐附近餐厅" → Supervisor 调用 `search_restaurants`，自己包装语言（如"我查到了，这有一家..."）
+4. `USE_SUPERVISOR=0` → 老流程完全正常（回滚保障）
+5. 前端 thinking 指示器正常显示工具调用进度
+6. 没有明显延迟增加
 
 ---
 
-## Priority 2 — Worker 架构修正
+## Phase 2: 多模态存储变革 (Image Registry & Migration)
 
-### 2.1 200 个 async worker → 单 dispatcher + Semaphore
+**目标**：解决数据库 Base64 膨胀问题，实现图文分离与按需回溯。
 
-`langgraph_server.py` 当前启动 200 个 `worker_loop` coroutine，每个串行处理任务（`await process_task` 完成才取下一个）。这是用线程池思维写 async 代码的典型误区：
+### 图片 Description 策略
 
-- 200 条 Redis `blpop` 长连接常驻，绝大多数时候全部闲置
-- 真正控制并发上限的是各 agent 的 Semaphore，worker 数量与实际吞吐无关
-- 这 200 个 coroutine 全在同一个 event loop 同一个线程里，没有真正的并行
+**不单独调 LLM 生成描述**。Description 来自 `analyze_food_image` Tool 的返回值（零成本副产品）：
+- Tool 返回 `{items: [{name: "汉堡"}, {name: "薯条"}], total_calories: 850}` 后
+- 提取食物名 + 热量拼成描述：`"汉堡+薯条, 850kcal"`
+- 回写到 messages 表占位符中
+- 非食物图片（Supervisor 未调用识别工具）→ 无描述，`[图片: {uuid}]`，可接受
 
-**修改方案**：
+前端显示：检测到 `[图片: {uuid}...]` 模式 → 调 `GET /api/images/{uuid}` 加载原图渲染，不丢失图片历史。
 
-```python
-# langgraph_server.py
-async def dispatcher():
-    """单连接持续拉取任务，每个任务独立 create_task 异步运行。"""
-    while True:
-        try:
-            task_data = await redis_client.blpop("wabi_ai_queue", timeout=0)
-            if task_data:
-                asyncio.create_task(process_task(json.loads(task_data[1])))
-        except Exception as e:
-            logger.error(f"Dispatcher error: {e}")
-            await asyncio.sleep(2)
+### 行动 2.1: 图片存储服务 + WebSocket 拦截
 
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(dispatcher())  # 一个 dispatcher 即可
+**新建** `src/server/image_store.py`：
+- `save_image(user_id, image_bytes, mime_type) -> uuid` — 存到 `data/images/{user_id}/{uuid}.jpg`
+- `load_image(uuid) -> bytes` — 按 UUID 读取
+- `update_description(message_id, description)` — 回写占位符描述
+
+**修改** `src/server/web.py`：
+- WebSocket 收到含图消息时：提取 base64 → `save_image()` → 生成 UUID
+- messages 表存 `[图片: {uuid}]`（不存 base64）
+- 图片 bytes 通过 Supervisor state 内存传递给 AI worker（不经过 DB）
+
+**新增** REST 端点 `GET /api/images/{uuid}`：
+- 前端渲染历史消息时调此接口加载图片
+
+### 行动 2.2: 修改 analyze_food_image Tool
+
+将 Tool 输入参数从 `image_base64: str` 改为 `image_uuid: str`，内部通过 UUID 从磁盘读取。
+
+Tool 返回后，从结果中提取食物名+热量拼成短描述，UPDATE messages 表占位符为 `[图片: {uuid} | 汉堡+薯条, 850kcal]`。
+
+### 行动 2.3: 历史数据迁移脚本
+
+**文件**：`scripts/migrate_images.py`
+
+1. 扫描 messages 表中 `has_image = 1` 且包含 base64 的记录
+2. 提取 base64 → `save_image()` 存磁盘 → 生成 UUID
+3. 从同一对话的 assistant 回复中尝试提取食物信息作为 description（尽力而为，无则留空）
+4. 用占位符替换原记录中的 base64，UPDATE 回数据库
+
+### 验收标准
+
+1. 新发的图片消息，messages 表中不再有 base64，只有 `[图片: {uuid}]` 占位符
+2. `analyze_food_image` 工具通过 UUID 正常读取图片并分析
+3. 工具返回后，占位符自动更新为 `[图片: {uuid} | 汉堡+薯条, 850kcal]`
+4. 前端通过 `GET /api/images/{uuid}` 正常渲染历史图片
+5. 迁移脚本运行后，数据库体积显著缩小
+
+---
+
+## Phase 3: 复合任务拆解 (Multi-Step Intent Resolution)
+
+**目标**：让 Agent 能在一轮对话中聪明地连续执行多步操作。
+
+### 行动 3.1: 优化 Supervisor Prompt
+
+强化多步推理指令：
+- "你可以连续调用工具，直到收集齐所有信息再回答"
+- "调用一个工具后，评估结果，决定是否需要调用下一个工具"
+- "对于'看看这个食物健康吗，并推荐类似的'，你应该先识别图片，再用识别结果中的菜系信息搜索餐厅"
+
+### 行动 3.2: 流式工具调用反馈 (Tool Call Streaming)
+
+在 Supervisor react loop 的每次工具调用前后推送细粒度状态：
+- 调用前："Agent 正在识别图片..."
+- 调用后："识别完成，发现 3 道菜。Agent 正在搜索餐厅..."
+- 最终："生成回复中..."
+
+利用现有 Redis Pub/Sub `{"status": "partial"}` 协议，前端已支持 `thinking` 类型消息，无需前端改动。
+
+### 验收标准
+
+1. "看看这个健康吗，并推荐点类似的" → 自动串行 `analyze_food_image` + `search_restaurants`，完整回答
+2. 前端显示分步进度："正在识别..." → "正在搜索餐厅..." → 最终回复
+
+---
+
+## Phase 4: 长期规划与快照记忆 (Weekly Planner & Chrono-Snapshots)
+
+**目标**：引入周粒度的心智模型与动态目标锁定机制。
+
+### 行动 4.1: Profile 历史快照表
+
+在 `src/server/db.py` 中新建 `user_profiles_history` 表：
+- `id`, `user_id`, `year_week` (如 "2026-W16"), `profile_snapshot` (JSON), `behavioral_notes`, `created_at`
+- 唯一约束：`(user_id, year_week)` — 保证幂等性
+
+每周日任务运行时，除了更新主表 `users.profile_json`，还插入一条历史快照。
+
+### 行动 4.2: 实现 log_meal_confirmed Tool
+
+**文件**：`src/langgraph_app/tools/meal_tools.py`
+
+- 输入：`meal_data: dict`（items, total_calories, protein, carbs, fat）
+- 调用已有的 `PostgresHistoryStore.save_meal_log()`（db.py 中已实现）
+- **幂等性**：`meal_logs` 表增加 `meal_hash` 列（hash(user_id + timestamp + items_json)），唯一约束 + `INSERT ... ON CONFLICT DO NOTHING`
+- Supervisor 只有在确认用户真实吃了某食物后（图片识别正常、用户未否认）才调用此 Tool
+
+### 行动 4.3: Weekly Planner 离线任务
+
+使用 APScheduler + PostgreSQL persistent job store：
+1. 每周日 23:59 触发
+2. 遍历活跃用户，读取本周 `meal_logs`
+3. 用 LLM 提炼 behavioral_notes（如 "本周碳水偏高，蛋白质不足"）
+4. 事务中同时：更新 `users.profile_json` 的 `behavioral_notes` + 插入 `user_profiles_history` 快照 + 插入 `weekly_summaries` 记录
+5. 幂等：`weekly_summaries` 表用 `(user_id, year_week)` 唯一约束
+
+**behavioral_notes 质量控制**：
+- 长度上限 500 字符，超出时 LLM 压缩合并
+- 每条追加时间戳（如 `[2026-W16] 本周碳水偏高`）
+- 标记来源：`[auto]`（系统生成）vs `[user]`（用户手写），Supervisor 优先信任 `[user]`
+- 用户可通过 `PUT /api/users/{id}/profile` 编辑/删除
+
+**并发安全**：
+- 单实例：`asyncio.Lock` per user_id
+- 多实例：`pg_advisory_lock(hash(user_id))` + APScheduler `pg_try_advisory_lock` 防重复执行
+
+### 验收标准
+
+1. Supervisor 识别图片后自动调用 `log_meal_confirmed` 入库，重复不产生重复记���
+2. Weekly Planner 生成的 behavioral_notes 出现在 Supervisor 的 system prompt 中
+3. 服务重启后 APScheduler 自动补偿 missed job
+
+---
+
+## Phase 清理: 删除遗留代码
+
+在全部 Phase 验证通过后：
+- `USE_SUPERVISOR` 默认改为 `1`，删除老图代码
+- 删除：`agents/chitchat/agent.py`, `agents/goalplanning/agent.py`, `agents/food_recognition/agent.py`（保留 `predictor.py`, `schemas.py`）, `agents/food_recommendation/agent.py`, `orchestrator/nodes/router.py`
+- 合并 `supervisor_state.py` → `state.py`
+
+---
+
+## 依赖关系
+
+```
+Phase 1 (Supervisor + Tools + graph 重写 + chat_manager 简化)
+  │
+  v
+Phase 2 (Image Registry) ──── 可与 Phase 3 并行
+  │
+Phase 3 (复合任务 + 流式反馈) ── 可与 Phase 2 并行
+  │
+  v
+Phase 4 (Weekly Planner + meal log + 快照)
+  │
+  v
+清理遗留代码
 ```
 
-实际并发上限由 Semaphore 保证，不需要 worker 数量来控制。`MAX_CONCURRENT_WORKERS = 200` 这个常量可以删掉，语义转移到 `semaphores.py` 里的各节点限制。
-
 ---
 
-## Priority 3 — 中型重构（影响可维护性）
+## 关键文件索引
 
-### 3.1 提取 profile_context 构建
+| 文件 | 作用 | Phase |
+|------|------|-------|
+| `src/langgraph_app/orchestrator/graph.py` | 核心图定义，需要重写 | 1 |
+| `src/langgraph_app/orchestrator/supervisor.py` | **新建** Supervisor react loop | 1 |
+| `src/langgraph_app/orchestrator/supervisor_state.py` | **新建** 简化 State | 1 |
+| `src/langgraph_app/tools/food_recognition_tool.py` | **新建** 图片识别 Tool | 1 |
+| `src/langgraph_app/tools/recommendation_tool.py` | **新建** 餐厅搜索 Tool | 1 |
+| `src/langgraph_app/utils/agent_utils.py` | **新建** 公共函数 | 1 |
+| `src/server/chat_manager.py` | 删除两阶段逻辑，简化历史加载 | 1 |
+| `src/server/ai.py` | 适配 Supervisor 事件流 | 1 |
+| `src/server/web.py` | 图片拦截 + UUID 存储 | 2 |
+| `src/server/image_store.py` | **新建** 图片存储服务 | 2 |
+| `src/langgraph_app/tools/meal_tools.py` | **新建** 饮食记录工具 | 4 |
+| `src/server/weekly_planner.py` | **新建** 周报生成 | 4 |
+| `src/server/db.py` | 新表 + 新方法 | 1, 4 |
 
-5 处相同代码 → `utils/agent_utils.py:build_profile_context(user_profile) -> str`。
+## 可复用的现有代码
 
-### 3.2 统一 logger 初始化
-
-`guardrails/nodes.py` 用 `setup_logger()`，其余用 `get_logger()`，统一为 `get_logger()`。
-
----
-
-## Priority 4 — BaseAgent 抽象
-
-chitchat 和 goalplanning 除 system prompt 外代码 100% 相同，食物 agent 也有大量重复。
-
-**依赖**：P1 重试工具先完成。
-
-```
-agents/
-  _base.py           # lang 检测、profile_context、retry cascade、model fallback
-  chitchat/agent.py  # 只剩 system prompt
-  goalplanning/agent.py  # system prompt + 未来的历史解析逻辑
-```
-
----
-
-## Priority 5 — 单元测试与压力测试
-
-每个子单元需要：
-- **功能测试**：正常路径 + 边界条件（空输入、无图片、模型失败 mock）
-- **降级路径测试**：主力模型失败时验证 cascade 行为正确
-- **压力测试**：并发验证 Semaphore 限流、jitter 退避不出现同步冲击波
-
-优先级：`with_retry` 工具本身 > recognition 流水线 > agent cascade > guardrails
-
----
-
-## Priority 6 — Goalplanning 重设计
-
-当前只是带完整历史的 chitchat 变体。计划功能：
-- 判断同一时间段上传多图，用户实际吃了哪一个
-- 基于历史识别结果计算累计营养摄入
-- 与用户健康目标对比，生成干预建议
-
-**需先设计**：
-1. message history 中如何标记"食物已确认/未确认"
-2. recognition_result 是否持久化到 DB
-3. state schema 扩展（累计热量、目标进度）
-
----
-
-## Priority 7 — 低优先级
-
-- **WebSocket 多标签页**：`active_connections` 改为 `Dict[str, Set[WebSocket]]`
-- **静默 catch 块**：`ip_location.py`、`food_recommendation/agent.py` 吞掉的异常加 `logger.debug`
-- **`recommendation` schema bug**：`Restaurant.user_ratings_total` 在 Places API v1 不存在，改为 `Optional[int] = None` 并在模板中条件渲染
-
----
-
-## 工作量估算
-
-| 优先级 | 内容 | 预估时间 |
-|--------|------|----------|
-| P1 | `with_retry` (jitter) + 各节点接入 + model cascade | 3 小时 |
-| P2 | dispatcher 替换 200 workers | 30 分钟 |
-| P3 | profile_context 提取 + logger 统一 | 1 小时 |
-| P4 | BaseAgent 抽象（依赖 P1） | 2 小时 |
-| P5 | 单元测试 + 压力测试 | 3-4 小时 |
-| P6 | Goalplanning 重设计 | 需讨论后估算 |
-| P7 | 低优先级杂项 | 1 小时 |
+| 函数/模块 | 位置 | 复用于 |
+|-----------|------|--------|
+| `predict_nutrition()` | `agents/food_recognition/predictor.py` | food_recognition_tool |
+| `FoodDetection` schema | `agents/food_recognition/schemas.py` | food_recognition_tool |
+| `search_restaurants_tool` | `tools/tools.py` | recommendation_tool |
+| `get_location_from_ip_async` | `tools/map/ip_location.py` | recommendation_tool |
+| `invoke_with_cascade()` | `utils/cascade.py` | Supervisor fallback |
+| `with_semaphore()` | `utils/semaphores.py` | 所有 Tool |
+| `with_retry()` | `utils/retry.py` | 所有 Tool |
+| `get_dominant_language()` | `utils/utils.py` | Supervisor |
+| `inject_dynamic_context()` | `utils/llm_factory.py` | Supervisor |
+| `save_meal_log()` / `load_meal_logs()` | `server/db.py` | meal_tools |
