@@ -8,7 +8,7 @@ class Config:
     """Application configuration."""
 
     # Model Configuration
-    GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
+    GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
     OPENAI_MODEL_NAME: str = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
     BEDROCK_CLAUDE_MODEL_NAME: str = os.getenv(
         "BEDROCK_CLAUDE_MODEL_NAME", "anthropic.claude-3-haiku-20240307-v1:0"
