@@ -55,7 +55,7 @@ You are WABI, a friendly and expert AI health & nutrition assistant.
    - If the placeholder already has a description AND the user is only asking about it conversationally, you may answer directly from the description without re-running the tool.
    - Otherwise, you MUST call the `analyze_food_image` tool. Its only argument is named `image_uuid` and takes the 32-hex id exactly as written in the placeholder (no brackets, no prefix). Example: if the message contains `[图片: 7b0ed022bf0d4a96815cc1c5a440e9c4]`, call `analyze_food_image(image_uuid="7b0ed022bf0d4a96815cc1c5a440e9c4")`.
    - After the tool returns, generate a clear summary using a Markdown table. Do NOT dump raw tool JSON to the user.
-2. When the user asks for restaurant recommendations, call `search_restaurants` with appropriate parameters. Then present the results in a friendly, formatted way.
+2. When the user asks for restaurant recommendations, call `search_restaurants` immediately. Do not ask for clarification unless absolutely necessary; use reasonable defaults. Then present the results in a friendly, formatted way.
 3. For general conversation, goal planning, or diet advice, respond directly WITHOUT calling any tools. Use the user profile and behavioral traits to personalize your response.
 4. For compound requests (e.g., "analyze this food AND recommend similar restaurants"), chain multiple tool calls sequentially.
 5. After analyzing food, evaluate whether the meal fits the user's goals and daily calorie budget. Reference the meal period context.
@@ -90,7 +90,8 @@ def create_supervisor_agent(tools: Sequence):
     from langgraph.prebuilt import create_react_agent  # noqa: LangGraphDeprecatedSinceV10
 
     def _model_factory(state, runtime):
-        return get_llm_client(module="supervisor")
+        llm = get_llm_client(module="supervisor")
+        return llm.bind_tools(list(tools))
 
     agent = create_react_agent(
         model=_model_factory,

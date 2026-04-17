@@ -16,6 +16,8 @@ from PIL import Image
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
+import re
 
 from langgraph_app.agents.food_recognition.predictor import predict_nutrition
 from langgraph_app.agents.food_recognition.schemas import FoodDetection
@@ -34,7 +36,11 @@ async def _estimate_nutrition_with_llm(client, detected_items: list) -> list:
     Returns a list of dicts: [{"name": str, "nutrition": {...}}, ...]
     """
     names = [
-        (item.get("name") if isinstance(item, dict) else getattr(item, "name", "Unknown Food"))
+        (
+            item.get("name")
+            if isinstance(item, dict)
+            else getattr(item, "name", "Unknown Food")
+        )
         for item in detected_items
     ]
     prompt = (
@@ -47,7 +53,9 @@ async def _estimate_nutrition_with_llm(client, detected_items: list) -> list:
         response = await with_retry(
             lambda: client.ainvoke(
                 [HumanMessage(content=prompt)],
-                config={"callbacks": [create_callback_handler("food_recognition_fallback")]},
+                config={
+                    "callbacks": [create_callback_handler("food_recognition_fallback")]
+                },
             ),
             attempts=3,
             base=0.8,
@@ -157,7 +165,9 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
             for k in total_nutrition:
                 total_nutrition[k] += res.get(k, 0.0)
         except Exception as e:
-            logger.warning("Local model failed on full image: %s. Using LLM estimate.", e)
+            logger.warning(
+                "Local model failed on full image: %s. Using LLM estimate.", e
+            )
             nutrition_source = "llm_estimate"
             itemized_nutrition = await _estimate_nutrition_with_llm(
                 client, [{"name": "Meal"}]
@@ -171,19 +181,51 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
             if isinstance(item, dict):
                 box = item.get("box", {})
                 name = item.get("name", "Unknown Food")
-                ymin = box.get("ymin", 0) if isinstance(box, dict) else getattr(box, "ymin", 0)
-                xmin = box.get("xmin", 0) if isinstance(box, dict) else getattr(box, "xmin", 0)
-                ymax = box.get("ymax", 1000) if isinstance(box, dict) else getattr(box, "ymax", 1000)
-                xmax = box.get("xmax", 1000) if isinstance(box, dict) else getattr(box, "xmax", 1000)
+                ymin = (
+                    box.get("ymin", 0)
+                    if isinstance(box, dict)
+                    else getattr(box, "ymin", 0)
+                )
+                xmin = (
+                    box.get("xmin", 0)
+                    if isinstance(box, dict)
+                    else getattr(box, "xmin", 0)
+                )
+                ymax = (
+                    box.get("ymax", 1000)
+                    if isinstance(box, dict)
+                    else getattr(box, "ymax", 1000)
+                )
+                xmax = (
+                    box.get("xmax", 1000)
+                    if isinstance(box, dict)
+                    else getattr(box, "xmax", 1000)
+                )
             else:
                 box = getattr(item, "box", None)
                 name = getattr(item, "name", "Unknown Food")
                 if box is None:
                     continue
-                ymin = getattr(box, "ymin", 0) if not isinstance(box, dict) else box.get("ymin", 0)
-                xmin = getattr(box, "xmin", 0) if not isinstance(box, dict) else box.get("xmin", 0)
-                ymax = getattr(box, "ymax", 1000) if not isinstance(box, dict) else box.get("ymax", 1000)
-                xmax = getattr(box, "xmax", 1000) if not isinstance(box, dict) else box.get("xmax", 1000)
+                ymin = (
+                    getattr(box, "ymin", 0)
+                    if not isinstance(box, dict)
+                    else box.get("ymin", 0)
+                )
+                xmin = (
+                    getattr(box, "xmin", 0)
+                    if not isinstance(box, dict)
+                    else box.get("xmin", 0)
+                )
+                ymax = (
+                    getattr(box, "ymax", 1000)
+                    if not isinstance(box, dict)
+                    else box.get("ymax", 1000)
+                )
+                xmax = (
+                    getattr(box, "xmax", 1000)
+                    if not isinstance(box, dict)
+                    else box.get("xmax", 1000)
+                )
 
             crop_xmin = max(0, min(w, int(xmin * w / 1000)))
             crop_ymin = max(0, min(h, int(ymin * h / 1000)))
@@ -206,14 +248,17 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
             except Exception as e:
                 logger.warning(
                     "Local model failed on item '%s': %s. Switching to LLM estimation.",
-                    name, e,
+                    name,
+                    e,
                 )
                 local_model_ok = False
                 break
 
         if not local_model_ok:
             nutrition_source = "llm_estimate"
-            itemized_nutrition = await _estimate_nutrition_with_llm(client, detected_items)
+            itemized_nutrition = await _estimate_nutrition_with_llm(
+                client, detected_items
+            )
             total_nutrition = {k: 0.0 for k in total_nutrition}
             for entry in itemized_nutrition:
                 for k in total_nutrition:
@@ -247,7 +292,13 @@ def _build_description(result: dict) -> str:
     return f"{joined}, {cal_str}"
 
 
-@tool("analyze_food_image")
+class AnalyzeFoodImageInput(BaseModel):
+    image_uuid: str = Field(
+        description="The 32-hex ID of the image exactly as written in the placeholder, without brackets or prefix. For example: 7b0ed022bf0d4a96815cc1c5a440e9c4"
+    )
+
+
+@tool("analyze_food_image", args_schema=AnalyzeFoodImageInput)
 async def analyze_food_image(
     image_uuid: str,
     config: RunnableConfig = None,
@@ -279,6 +330,15 @@ async def analyze_food_image(
     image_uuid = (image_uuid or "").strip()
     if not image_uuid:
         return json.dumps({"error": "empty image_uuid"})
+
+    # Defense: extract the 32-hex uuid in case the LLM included brackets or prefix
+    match = re.search(r"([a-fA-F0-9]{32})", image_uuid)
+    if match:
+        image_uuid = match.group(1).lower()
+    else:
+        return json.dumps(
+            {"error": "invalid image_uuid format, expected 32-hex string"}
+        )
 
     try:
         image_bytes, _mime = load_image(user_id, image_uuid)

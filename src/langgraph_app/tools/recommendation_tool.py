@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 from langgraph_app.tools.tools import search_restaurants_tool as _raw_search
 from langgraph_app.tools.map.ip_location import get_location_from_ip_async
@@ -33,7 +34,28 @@ async def _resolve_location(
     return None, None
 
 
-@tool("search_restaurants")
+class SearchRestaurantsInput(BaseModel):
+    query: str = Field(
+        default="restaurants",
+        description="What the user is looking for. Defaults to 'restaurants' if the user just asks for general recommendations.",
+    )
+    cuisine_type: Optional[str] = Field(
+        default=None,
+        description="Optional cuisine filter (e.g., 'Japanese', 'Italian').",
+    )
+    lat: Optional[float] = Field(
+        default=None, description="User's latitude. Leave empty if unknown."
+    )
+    lng: Optional[float] = Field(
+        default=None, description="User's longitude. Leave empty if unknown."
+    )
+    radius_km: float = Field(default=5.0, description="Search radius in kilometers.")
+    max_results: int = Field(
+        default=5, description="Maximum number of results to return."
+    )
+
+
+@tool("search_restaurants", args_schema=SearchRestaurantsInput)
 async def search_restaurants(
     query: str,
     cuisine_type: Optional[str] = None,
@@ -71,7 +93,10 @@ async def search_restaurants(
         restaurants = result_dict.get("restaurants", [])
         if not restaurants:
             return json.dumps(
-                {"restaurants": [], "message": "No restaurants found matching the criteria."},
+                {
+                    "restaurants": [],
+                    "message": "No restaurants found matching the criteria.",
+                },
                 ensure_ascii=False,
             )
         return json.dumps({"restaurants": restaurants}, ensure_ascii=False)

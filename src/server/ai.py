@@ -26,6 +26,7 @@ logger = logging.getLogger("wabi.ai.worker")
 logging.basicConfig(level=logging.INFO)
 
 from langgraph_app.config import config as _app_config
+
 redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 
 # Track the dispatcher task for health reporting
@@ -180,7 +181,21 @@ async def process_task(payload: Dict[str, Any]):
         if result_messages:
             last_msg = result_messages[-1]
             if isinstance(last_msg, AIMessage) and last_msg.content:
-                final_msg = last_msg.content
+                raw_content = last_msg.content
+                if isinstance(raw_content, str):
+                    final_msg = raw_content
+                elif isinstance(raw_content, list):
+                    # LangChain might return a list of dicts for multimodal/tool responses
+                    text_parts = [
+                        c.get("text", "")
+                        for c in raw_content
+                        if isinstance(c, dict) and "text" in c
+                    ]
+                    final_msg = (
+                        " ".join(text_parts).strip() if text_parts else str(raw_content)
+                    )
+                else:
+                    final_msg = str(raw_content)
 
         response_payload = {
             "status": "success",
@@ -244,6 +259,7 @@ async def startup_event():
     # Pre-warm IP geolocation cache (saves 3-5s on first recommendation)
     try:
         from langgraph_app.tools.map.ip_location import get_location_from_ip_async
+
         loc = await get_location_from_ip_async()
         logger.info(f"Pre-warmed IP geolocation cache: {loc}")
     except Exception as e:
@@ -257,7 +273,8 @@ async def startup_event():
 async def health():
     return {
         "status": "ok",
-        "dispatcher_alive": _dispatcher_task is not None and not _dispatcher_task.done(),
+        "dispatcher_alive": _dispatcher_task is not None
+        and not _dispatcher_task.done(),
         "active_tasks": len(_active_tasks),
     }
 
