@@ -854,8 +854,125 @@ html, body {
 }
 
 /* Widen assistant message when it contains charts */
-.message.assistant:has(.nutrition-viz) {
+.message.assistant:has(.nutrition-viz),
+.message.assistant:has(.restaurant-cards) {
     max-width: 88%;
+}
+
+/* ===================================================================
+   Restaurant Cards — richer alternative to markdown tables
+   =================================================================== */
+
+.restaurant-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 12px 0 6px;
+}
+
+.rc-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--sol-cyan);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    box-shadow: var(--shadow-xs);
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.rc-card:hover {
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+
+.rc-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 6px;
+}
+
+.rc-name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-1);
+    line-height: 1.35;
+    flex: 1;
+    min-width: 0;
+}
+
+.rc-rating {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--sol-yellow);
+    background: rgba(181,137,0,0.08);
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.rc-addr {
+    font-size: 12.5px;
+    color: var(--text-2);
+    margin: 4px 0 8px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.rc-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.rc-pill,
+.rc-health {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 3px 9px;
+    border-radius: 999px;
+    line-height: 1.3;
+}
+
+.rc-pill {
+    background: rgba(38,139,210,0.08);
+    color: var(--sol-blue);
+    border: 1px solid rgba(38,139,210,0.18);
+}
+
+.rc-health-good {
+    background: rgba(133,153,0,0.12);
+    color: var(--sol-green);
+    border: 1px solid rgba(133,153,0,0.25);
+}
+
+.rc-health-mid {
+    background: rgba(42,161,152,0.10);
+    color: var(--sol-cyan);
+    border: 1px solid rgba(42,161,152,0.22);
+}
+
+.rc-health-high {
+    background: rgba(203,75,22,0.10);
+    color: var(--sol-orange);
+    border: 1px solid rgba(203,75,22,0.22);
+}
+
+.rc-advice {
+    font-size: 12.5px;
+    color: var(--text-1);
+    background: rgba(0,0,0,0.025);
+    border-radius: var(--r-sm);
+    padding: 7px 10px;
+    line-height: 1.5;
+    border-left: 2px solid var(--sol-green);
 }
 
 /* Typing indicator */
@@ -1073,7 +1190,8 @@ html, body {
 .chat-image {
     margin: 8px 0 0;
     padding: 0;
-    display: inline-block;
+    display: block;
+    clear: both;
     max-width: 100%;
 }
 

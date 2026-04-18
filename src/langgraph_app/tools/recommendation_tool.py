@@ -199,6 +199,26 @@ async def search_restaurants(
                 ensure_ascii=False,
             )
 
+        display_guidance = (
+            "RESTAURANT RENDERING RULES (authoritative):\n"
+            "1. Open with ONE short sentence introducing the list (match the user's language).\n"
+            "2. Immediately after the intro, emit EXACTLY ONE fenced code block tagged `restaurants` whose body is a JSON array. Each object MUST have these keys:\n"
+            "   - name        (string, copy verbatim from the tool result)\n"
+            "   - address     (string, copy verbatim)\n"
+            "   - rating      (number or null, copy verbatim)\n"
+            "   - cuisine     (string, a short, human-friendly category inferred from `types` e.g. 'Japanese', 'Cafe', 'Hotpot'. Keep it in the reply's language.)\n"
+            "   - health      (string, ONE of: 'healthy', 'balanced', 'indulgent'. Pick based on cuisine + restaurant name; favour 'healthy' for salad/veg/poke/steamed/lean-protein spots, 'indulgent' for fried/BBQ/dessert/burger/hotpot, else 'balanced'.)\n"
+            "   - advice      (string, 10-30 char concrete dining advice in the reply's language — e.g. 'Order grilled over fried, skip sugary drinks'. Personalize when the user's profile has relevant flags.)\n"
+            "3. DO NOT render a Markdown table. DO NOT repeat the list in prose. DO NOT add extra keys.\n"
+            "4. After the fenced block, you may add ONE short closing sentence (optional).\n"
+            "5. If the user asks 'more', call this tool again with page+1 — do NOT reuse past results.\n"
+            "Example skeleton:\n"
+            "附近有一些餐厅可以考虑：\n"
+            "```restaurants\n"
+            "[{\"name\":\"...\",\"address\":\"...\",\"rating\":4.2,\"cuisine\":\"日料\",\"health\":\"healthy\",\"advice\":\"选清汤拉面，少加味精\"}]\n"
+            "```"
+        )
+
         return json.dumps(
             {
                 "restaurants": slice_,
@@ -207,6 +227,7 @@ async def search_restaurants(
                 "location_used": (
                     {"lat": lat, "lng": lng} if lat is not None and lng is not None else None
                 ),
+                "display_guidance": display_guidance,
             },
             ensure_ascii=False,
         )

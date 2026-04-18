@@ -1220,8 +1220,64 @@ function refreshAllNutritionViz() {
     });
 }
 
+function buildRestaurantCards(items) {
+    if (!Array.isArray(items) || items.length === 0) return '';
+
+    const healthMeta = {
+        healthy:   { zh: '健康', en: 'Healthy',   cls: 'rc-health-good',  icon: '🥗' },
+        balanced:  { zh: '均衡', en: 'Balanced',  cls: 'rc-health-mid',   icon: '🍽️' },
+        indulgent: { zh: '放纵', en: 'Indulgent', cls: 'rc-health-high',  icon: '🍔' },
+    };
+
+    const cards = items.map((r) => {
+        const name = escapeHtml(String(r.name || '—'));
+        const address = escapeHtml(String(r.address || ''));
+        const cuisine = escapeHtml(String(r.cuisine || ''));
+        const advice = escapeHtml(String(r.advice || ''));
+        const ratingNum = typeof r.rating === 'number' ? r.rating : parseFloat(r.rating);
+        const rating = Number.isFinite(ratingNum) && ratingNum > 0
+            ? `<span class="rc-rating">⭐ ${ratingNum.toFixed(1)}</span>`
+            : '';
+        const key = String(r.health || 'balanced').toLowerCase();
+        const h = healthMeta[key] || healthMeta.balanced;
+        const isZh = /[\u4e00-\u9fa5]/.test([r.cuisine, r.advice].join(''));
+        const healthLabel = isZh ? h.zh : h.en;
+        const cuisinePill = cuisine ? `<span class="rc-pill">${cuisine}</span>` : '';
+
+        return `
+            <article class="rc-card">
+                <header class="rc-head">
+                    <h4 class="rc-name">${name}</h4>
+                    ${rating}
+                </header>
+                ${address ? `<div class="rc-addr">📍 ${address}</div>` : ''}
+                <div class="rc-tags">
+                    ${cuisinePill}
+                    <span class="rc-health ${h.cls}">${h.icon} ${healthLabel}</span>
+                </div>
+                ${advice ? `<div class="rc-advice">💡 ${advice}</div>` : ''}
+            </article>
+        `;
+    }).join('');
+
+    return `<div class="restaurant-cards">${cards}</div>`;
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
+
+    // Extract ```restaurants JSON blocks FIRST so escapeHtml doesn't mangle
+    // the JSON string quotes. Replace with sentinels, substitute back at end.
+    const restaurantBlocks = [];
+    text = text.replace(/```restaurants\s*\n([\s\S]*?)```/g, (_, body) => {
+        try {
+            const data = JSON.parse(body.trim());
+            restaurantBlocks.push(buildRestaurantCards(data));
+        } catch (e) {
+            restaurantBlocks.push(`<pre><code>${escapeHtml(body)}</code></pre>`);
+        }
+        return `\x00RESTCARDS:${restaurantBlocks.length - 1}\x00`;
+    });
 
     let html = escapeHtml(text);
 
@@ -1281,9 +1337,13 @@ function renderMarkdown(text) {
     html = html.replace(/<\/ul>\s*<ul>/g, '');
 
     // Line breaks (ignore line breaks inside our newly generated div blocks)
-    // Actually, simple replace will convert \n to <br/>. We need to be careful with the generated HTML.
-    // So let's temporarily swap out our divs.
-    return html.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>').replace(/<br\/>\s*(<div class="nutrition|<div class="nc-|<div class="table-wrapper|<\/div>|<svg|<\/svg>|<table|<\/table>|<tr|<\/tr>|<td|<\/td>|<th|<\/th>)/g, '$1');
+    html = html.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>').replace(/<br\/>\s*(<div class="nutrition|<div class="nc-|<div class="table-wrapper|<div class="restaurant-cards|<\/div>|<svg|<\/svg>|<table|<\/table>|<tr|<\/tr>|<td|<\/td>|<th|<\/th>)/g, '$1');
+
+    // Swap restaurant card sentinels back. Strip <br/> on either side so the
+    // card block doesn't pick up extra blank space from the intro/closing lines.
+    html = html.replace(/(<br\/>)*\x00RESTCARDS:(\d+)\x00(<br\/>)*/g, (_, _b1, idx) => restaurantBlocks[parseInt(idx, 10)] || '');
+
+    return html;
 }
 
 // ---------------------------------------------------------------------------

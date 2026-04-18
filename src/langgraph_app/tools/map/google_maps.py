@@ -83,7 +83,7 @@ class GoogleMapsTool:
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
-            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.priceLevel,places.id,places.types,nextPageToken",
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.id,places.types,nextPageToken",
         }
 
         payload: Dict[str, Any] = {
@@ -138,7 +138,6 @@ class GoogleMapsTool:
                         "name": place.get("displayName", {}).get("text", "Unknown"),
                         "address": place.get("formattedAddress", "Unknown"),
                         "rating": place.get("rating", 0.0),
-                        "price_level": place.get("priceLevel", "UNKNOWN"),
                         "place_id": place.get("id"),
                         "types": place.get("types", []),
                     }
