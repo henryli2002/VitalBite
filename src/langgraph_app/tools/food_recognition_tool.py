@@ -30,6 +30,45 @@ from langgraph_app.config import config
 logger = logging.getLogger("wabi.tools.food_recognition")
 
 
+# Post-analysis rendering rules, injected into the tool's return JSON so the
+# Supervisor only pays this token cost when the tool actually runs.  Captures
+# the v3.3 Step-4 summary contract: item-name translation, strict table, meal
+# fit math against the user's daily budget, and allergy/goal flags.
+_POST_ANALYSIS_GUIDANCE = {
+    "apply": "When rendering this tool result to the user, follow these rules EXACTLY.",
+    "rules": [
+        "1. IDENTIFY: open with a brief, warm sentence naming the foods detected.",
+        "2. TRANSLATE ITEM NAMES: the `items[*].name` field is always in English. "
+        "Translate each name into the user's language before displaying it. "
+        "Keep the original English only when no common translation exists or the "
+        "name is a proper/brand name.",
+        "3. TABLE: render a Markdown table with exactly six columns in this order — "
+        "Item, Weight, Calories, Fat, Carbs, Protein. Headers and units MUST be "
+        "in the user's language. "
+        "For Chinese responses the headers MUST be: "
+        "`| 项目 | 重量 | 热量 | 脂肪 | 碳水 | 蛋白质 |`. "
+        "For English responses keep the English headers as written above.",
+        "4. NO TOTAL ROW: do NOT append a Total / 总计 row — the frontend sums the "
+        "columns automatically.",
+        "5. ACCURACY: copy the numeric values from `items[*].nutrition` verbatim. "
+        "Do not recompute, round, or re-scale.",
+        "6. PERSONALIZATION: cross-check the detected items against the user's "
+        "allergies / dietary restrictions / health conditions from [USER CONTEXT] "
+        "in the system prompt. If any item conflicts, flag it explicitly in one "
+        "short sentence after the table.",
+        "7. MEAL FIT: internally consider the current meal period and the daily "
+        "calorie reference in [USER CONTEXT] to judge whether the total calories "
+        "fit the user's meal budget. Then state a ONE-sentence plain-language "
+        "verdict (e.g. 'a reasonable lunch', 'a bit heavy for dinner'). "
+        "Do NOT expose any percentage math, target ranges, or internal reasoning "
+        "numbers to the user.",
+        "8. LANGUAGE: the response supports Chinese and English ONLY. Detect the "
+        "user's language from recent messages and write the ENTIRE reply (prose + "
+        "table + flags) in that language.",
+    ],
+}
+
+
 async def _estimate_nutrition_with_llm(client, detected_items: list) -> list:
     """Fallback: ask the LLM to estimate nutrition by food name.
 
@@ -98,6 +137,30 @@ async def _estimate_nutrition_with_llm(client, detected_items: list) -> list:
         ]
 
 
+def _downscale_for_detection(image_bytes: bytes, max_side: int = 1024, quality: int = 85) -> bytes:
+    """Shrink oversized photos before sending to the vision API.
+
+    Food detection doesn't need full-resolution — large PNGs (multi-MB, 2K+
+    long side) bloat request time and push us past the detection timeout.
+    Returns JPEG bytes. Falls back to the original bytes on any failure.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        long_side = max(img.size)
+        if long_side > max_side:
+            scale = max_side / long_side
+            new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
+            img = img.resize(new_size, Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning("Image downscale failed, using original: %r", e)
+        return image_bytes
+
+
 async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
     """Core recognition pipeline: detection -> cropping -> prediction.
 
@@ -109,7 +172,8 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
     detected_items = []
     try:
         structured_llm = client.with_structured_output(FoodDetection)
-        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        detect_bytes = _downscale_for_detection(image_bytes)
+        img_b64 = base64.b64encode(detect_bytes).decode("utf-8")
         detect_msg = HumanMessage(
             content=[
                 {
@@ -117,8 +181,11 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
                     "text": (
                         "Detect all distinct food portions or dishes in this image. "
                         "Group items by 'plate' or 'serving'. For example, a burger and a side "
-                        "of fries are TWO separate items. A plate of salad is ONE single item. "
-                        "Do NOT detect individual ingredients within a single dish. "
+                        "of fries are TWO separate items. A plate of salad (even if ingredients "
+                        "are visibly unmixed) is ONE single item. Do NOT detect individual "
+                        "ingredients within a single dish, and do NOT return sauces, condiments, "
+                        "spices, or garnishes as separate items — treat them as part of the dish "
+                        "they accompany. "
                         "For each detected dish/portion, provide its name and its bounding box "
                         "(ymin, xmin, ymax, xmax normalized between 0 and 1000)."
                     ),
@@ -137,14 +204,14 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
                 cap=15.0,
                 fallback=None,
             ),
-            timeout=config.PRIMARY_LLM_TIMEOUT_S,
+            timeout=config.HEAVY_LLM_TIMEOUT_S,
         )
         if detection_res is not None:
             detected_items = getattr(detection_res, "items", [])
             if not detected_items and isinstance(detection_res, dict):
                 detected_items = detection_res.get("items", [])
     except Exception as e:
-        logger.error("Object detection failed: %s", e)
+        logger.error("Object detection failed: %r", e, exc_info=True)
 
     # Step 2: Cropping and prediction
     itemized_nutrition = []
@@ -271,6 +338,7 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
         "total_calories": total_nutrition.get("total_calories", 0.0),
         "total_nutrition": total_nutrition,
         "nutrition_source": nutrition_source,
+        "display_guidance": _POST_ANALYSIS_GUIDANCE,
     }
 
 
@@ -294,7 +362,7 @@ def _build_description(result: dict) -> str:
 
 class AnalyzeFoodImageInput(BaseModel):
     image_uuid: str = Field(
-        description="The 32-hex ID of the image exactly as written in the placeholder, without brackets or prefix. For example: 7b0ed022bf0d4a96815cc1c5a440e9c4"
+        description="The 32-hex UUID taken from the server-injected `<attached_image uuid=.../>` marker on the user's message. Pass the UUID only (no angle brackets, no attributes). Example: 7b0ed022bf0d4a96815cc1c5a440e9c4"
     )
 
 
@@ -305,10 +373,13 @@ async def analyze_food_image(
 ) -> str:
     """Analyze a food image to detect items and estimate nutritional content.
 
+    CRITICAL INSTRUCTION FOR LLM: ALWAYS perform a fresh tool call when the user uploads a new image or asks for analysis. DO NOT answer from past conversation history.
+
     Args:
-        image_uuid: The short UUID handle from a ``[图片: {uuid}]`` placeholder
-            in the user's message. The image bytes are loaded from the server's
-            image registry — never passed inline.
+        image_uuid: The 32-hex UUID from a ``<attached_image uuid=.../>``
+            marker that the server injected into the user's message. The
+            image bytes are loaded from the server's image registry — never
+            passed inline.
 
     Returns:
         A JSON string containing detected food items with per-item and total

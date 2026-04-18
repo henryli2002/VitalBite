@@ -122,7 +122,11 @@ def get_llm_client(
     if selected == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        client = ChatGoogleGenerativeAI(model=resolved_model, **common_params)
+        # Gemini 2.5 supports native `thinking_budget` on the constructor.
+        gemini_params = dict(common_params)
+        if "thinking_budget" in sampling_params:
+            gemini_params["thinking_budget"] = sampling_params["thinking_budget"]
+        client = ChatGoogleGenerativeAI(model=resolved_model, **gemini_params)
 
     elif selected == "openai":
         from langchain_openai import ChatOpenAI

@@ -41,14 +41,19 @@ class GoogleMapsTool:
         cuisine_type: Optional[str] = None,
         radius_km: Optional[float] = None,
         lat_lng: Optional[Tuple[float, float]] = None,
-        max_results: int = 5,
-    ) -> List[Dict[str, Any]]:
+        max_results: int = 20,
+        page_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Search for restaurants based on location/coordinates and cuisine asynchronously.
         Implements Redis caching to avoid massive Google Maps billing during scale.
+
+        Returns a dict ``{"restaurants": [...], "next_page_token": str | None}``.
+        Pass the returned ``next_page_token`` back in subsequent calls to fetch the
+        next batch (Google Places Text Search supports up to 60 results across 3 pages).
         """
         if not self.api_key:
-            return []
+            return {"restaurants": [], "next_page_token": None}
 
         query_parts = []
         if cuisine_type:
@@ -78,13 +83,15 @@ class GoogleMapsTool:
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
-            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.priceLevel,places.id,places.types",
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.priceLevel,places.id,places.types,nextPageToken",
         }
 
         payload: Dict[str, Any] = {
             "textQuery": " ".join(query_parts),
-            "maxResultCount": max_results,
+            "pageSize": min(max(max_results, 1), 20),  # Places v1 caps pageSize at 20
         }
+        if page_token:
+            payload["pageToken"] = page_token
 
         if lat_lng:
             radius_meters = int(radius_km * 1000) if radius_km else 5000
@@ -121,7 +128,7 @@ class GoogleMapsTool:
             data = await with_retry(_do_request, attempts=3, base=1.0, cap=20.0, fallback=None)
             if data is None:
                 logger.error("Google Maps API failed after retries")
-                return []
+                return {"restaurants": [], "next_page_token": None}
 
             places = data.get("places", [])
             formatted_results = []
@@ -137,26 +144,31 @@ class GoogleMapsTool:
                     }
                 )
 
+            batch = {
+                "restaurants": formatted_results,
+                "next_page_token": data.get("nextPageToken"),
+            }
+
             # 3. Store the successful response in Redis Cache
             cache_ttl = self.CACHE_TTL_SECONDS if formatted_results else self.CACHE_TTL_EMPTY
             try:
                 await self.redis_client.setex(
                     name=cache_key,
                     time=cache_ttl,
-                    value=json.dumps(formatted_results, ensure_ascii=False)
+                    value=json.dumps(batch, ensure_ascii=False),
                 )
             except Exception as e:
                 logger.warning(f"Redis Cache SET failed: {e}")
 
-            return formatted_results
+            return batch
 
         except httpx.HTTPStatusError as e:
             logger.error(f"Error calling Google Maps API: {e}")
             logger.error(f"Response: {e.response.text}")
-            return []
+            return {"restaurants": [], "next_page_token": None}
         except Exception as e:
             logger.error(f"Unknown error during Google Maps search: {e}")
-            return []
+            return {"restaurants": [], "next_page_token": None}
 
 
 # Singleton instance

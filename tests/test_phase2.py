@@ -1,10 +1,10 @@
-"""Unit tests for Phase 2: Image registry & migration.
+"""Unit tests for Phase 2: Image registry, image_refs column, migration.
 
 Covers:
 - image_store round-trip (save/load/exists/delete)
-- placeholder regex and format helpers
 - analyze_food_image tool with UUID input (mocked pipeline)
 - migration script helpers (idempotency, extraction variants)
+- server-injected <attached_image/> annotation builder
 """
 
 from __future__ import annotations
@@ -108,50 +108,76 @@ class TestImageStore:
 
 
 # =========================================================================
-# 2. Placeholder helpers
+# 2. Server-injected attachment annotation builder
 # =========================================================================
 
 
-class TestPlaceholderHelpers:
-    def test_format_without_description(self):
-        from server.image_store import format_placeholder
+class TestAttachedImageAnnotation:
+    def test_empty_returns_empty_string(self):
+        from server.ai import _format_image_annotation
+
+        assert _format_image_annotation([]) == ""
+        assert _format_image_annotation(None) == ""
+
+    def test_single_uuid_no_description(self):
+        from server.ai import _format_image_annotation
 
         uid = "a" * 32
-        assert format_placeholder(uid) == f"[图片: {uid}]"
+        out = _format_image_annotation([{"uuid": uid, "description": ""}])
+        assert out == f"<attached_image uuid={uid}/>"
 
-    def test_format_with_description(self):
-        from server.image_store import format_placeholder
-
-        uid = "a" * 32
-        assert format_placeholder(uid, "burger, 500kcal") == f"[图片: {uid} | burger, 500kcal]"
-
-    def test_extract_uuids_plain(self):
-        from server.image_store import extract_uuids
+    def test_single_uuid_with_description(self):
+        from server.ai import _format_image_annotation
 
         uid = "b" * 32
-        text = f"hello\n\n[图片: {uid}]"
-        assert extract_uuids(text) == [uid]
+        out = _format_image_annotation([{"uuid": uid, "description": "burger, 500kcal"}])
+        assert out == f'<attached_image uuid={uid} description="burger, 500kcal"/>'
 
-    def test_extract_uuids_with_description(self):
-        from server.image_store import extract_uuids
-
-        uid = "c" * 32
-        text = f"[图片: {uid} | pizza, 300kcal]"
-        assert extract_uuids(text) == [uid]
-
-    def test_extract_uuids_multiple(self):
-        from server.image_store import extract_uuids
+    def test_multiple_refs(self):
+        from server.ai import _format_image_annotation
 
         uid1 = "a" * 32
         uid2 = "b" * 32
-        text = f"[图片: {uid1}] then [图片: {uid2} | salad, 200kcal]"
-        assert extract_uuids(text) == [uid1, uid2]
+        out = _format_image_annotation([
+            {"uuid": uid1, "description": ""},
+            {"uuid": uid2, "description": "salad"},
+        ])
+        assert f"uuid={uid1}" in out
+        assert f'uuid={uid2} description="salad"' in out
+        assert out.count("<attached_image") == 2
 
-    def test_extract_uuids_empty(self):
-        from server.image_store import extract_uuids
+    def test_malformed_entries_ignored(self):
+        from server.ai import _format_image_annotation
 
-        assert extract_uuids("nothing here") == []
-        assert extract_uuids("") == []
+        out = _format_image_annotation([
+            {"uuid": ""},
+            "not a dict",
+            {"description": "no uuid"},
+            {"uuid": "c" * 32},
+        ])
+        assert out == f"<attached_image uuid={'c' * 32}/>"
+
+    def test_user_text_does_not_bleed_into_uuid_extraction(self):
+        """Regression: user typing '[image: fakeuuid]' in their prose must NOT be
+        treated as an attached image. The annotation is built solely from the
+        trusted image_refs list, never from parsing content."""
+        from server.ai import build_langchain_messages
+        from langchain_core.messages import HumanMessage
+
+        fake = "a" * 32
+        msgs = build_langchain_messages([
+            {
+                "role": "user",
+                "content": f"check out my cool [image: {fake}] syntax",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "image_refs": [],  # nothing attached
+            }
+        ])
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], HumanMessage)
+        # The literal text survives unchanged; no <attached_image> marker added.
+        assert "[image:" in msgs[0].content
+        assert "<attached_image" not in msgs[0].content
 
 
 # =========================================================================
@@ -303,9 +329,12 @@ class TestMigrationHelpers:
         assert mime == "image/jpeg"
         assert body == b64
 
-    def test_already_migrated_skips(self):
+    def test_already_migrated_detects_populated_refs(self):
         from scripts.migrate_images import _already_migrated
 
         uid = "a" * 32
-        assert _already_migrated(f"hi\n[图片: {uid}]") is True
-        assert _already_migrated("no placeholder here") is False
+        assert _already_migrated([{"uuid": uid, "description": ""}]) is True
+        assert _already_migrated('[{"uuid":"abc"}]') is True  # JSON string form
+        assert _already_migrated([]) is False
+        assert _already_migrated(None) is False
+        assert _already_migrated("[]") is False

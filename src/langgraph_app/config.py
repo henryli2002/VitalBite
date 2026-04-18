@@ -35,11 +35,22 @@ class Config:
             "food_recognition": {
                 "temperature": 0.0,
                 "top_p": 0.1,
+                # Disable Gemini 2.5 thinking — a 10+ item detection schema
+                # routinely exceeds PRIMARY_LLM_TIMEOUT_S with thinking on,
+                # causing silent TimeoutErrors and a "Full Meal" fallback.
+                "thinking_budget": 0,
             },  # Food Recognition MUST be deterministic
             "food_recommendation": {
                 "temperature": 0.5,
                 "top_p": 0.95,
             },  # Food Recommendation module using Gemini
+            "supervisor": {
+                "temperature": 0.2,
+                "top_p": 0.9,
+                # Disable Gemini 2.5 "thinking" mode — it causes premature STOP
+                # that truncates Markdown tables mid-row.
+                "thinking_budget": 0,
+            },
         },
         "openai": {
             "router": {"temperature": 0.1, "top_p": 0.8},  # Router module using OpenAI

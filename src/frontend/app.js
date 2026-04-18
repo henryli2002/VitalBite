@@ -217,7 +217,9 @@ async function loadHistory(userId) {
     dom.messagesScroll.innerHTML = '';
     clearPendingAssistantMessage();
     const history = await apiGet(`/api/users/${userId}/history`);
-    history.forEach((msg) => appendMessage(msg.role, msg.content, msg.timestamp));
+    history.forEach((msg) =>
+        appendMessage(msg.role, msg.content, msg.timestamp, msg.image_refs || [])
+    );
     scrollToBottom();
 }
 
@@ -473,15 +475,28 @@ async function saveProfile() {
 // Message Rendering
 // ---------------------------------------------------------------------------
 
-function appendMessage(role, content, timestamp) {
+function renderImageRefs(imageRefs) {
+    if (!imageRefs || !imageRefs.length) return '';
+    const uid = state.activeUserId;
+    if (!uid) return '';
+    return imageRefs.map((ref) => {
+        const src = `/api/images/${encodeURIComponent(uid)}/${ref.uuid}`;
+        const desc = (ref.description || '').trim();
+        const caption = desc ? `<div class="img-caption">${escapeHtml(desc)}</div>` : '';
+        return `<figure class="chat-image"><img src="${src}" alt="image" loading="lazy"/>${caption}</figure>`;
+    }).join('');
+}
+
+function appendMessage(role, content, timestamp, imageRefs) {
     const el = document.createElement('div');
     el.className = `message ${role}`;
 
     const rendered = renderMarkdown(content);
+    const images = renderImageRefs(imageRefs);
     const timeStr = formatTime(timestamp);
 
     el.innerHTML = `
-        <div class="message-content">${rendered}</div>
+        <div class="message-content">${rendered}${images}</div>
         <span class="message-time">${timeStr}</span>
     `;
 
@@ -1239,21 +1254,8 @@ function renderMarkdown(text) {
         }
     });
 
-    // Phase 2 image placeholders: [图片: {uuid}] or [图片: {uuid} | description]
-    // Served via GET /api/images/{user_id}/{uuid}. A description, if present,
-    // is shown as a small caption beneath the image.
-    html = html.replace(/\[图片:\s*([a-f0-9]{32})(?:\s*\|\s*([^\]]*))?\]/gi, (match, uuid, desc) => {
-        const uid = state.activeUserId;
-        if (!uid) return match;
-        const src = `/api/images/${encodeURIComponent(uid)}/${uuid.toLowerCase()}`;
-        const trimmedDesc = desc ? desc.trim() : '';
-        const caption = trimmedDesc
-            ? `<div class="img-caption">${trimmedDesc}</div>`
-            : '';
-        return `<figure class="chat-image"><img src="${src}" alt="image" loading="lazy"/>${caption}</figure>`;
-    });
-
-    // Legacy Markdown images (data URIs from pre-Phase 2 history, or local echo)
+    // Markdown images (local echo only — history messages get their images
+    // rendered from the image_refs array, not from content placeholders).
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 300px; max-height: 300px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin-top: 8px;"/>');
 
     // Headers

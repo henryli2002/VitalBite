@@ -2,14 +2,17 @@
 
 Scans the `messages` table for rows whose content still embeds
 ``data:image/...;base64,...`` (either as a raw string or as a serialized
-multimodal JSON list) and rewrites them to the Phase 2 format:
+multimodal JSON list). For each match:
 
-    "{optional text}\n\n[图片: {uuid}]"
+1. Extracts the base64 body and writes the decoded bytes to
+   ``data/images/{user_id}/{uuid}.{ext}``.
+2. Stores ``{"uuid": ..., "description": ""}`` in the row's ``image_refs``
+   JSONB column.
+3. Strips the base64 payload from the ``content`` text column.
 
-The extracted bytes are written under ``data/images/{user_id}/{uuid}.{ext}``.
-
-The script is idempotent — rows already in the new placeholder format are
-skipped. Run it once per database during the Phase 2 rollout.
+The script is idempotent — rows whose ``image_refs`` already contains an
+entry, or whose content carries no base64, are skipped. Run it once per
+database during the Phase 2 rollout.
 
 Usage:
     python scripts/migrate_images.py           # dry run
@@ -31,7 +34,7 @@ from typing import Optional, Tuple
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "src"))
 
-from server.image_store import save_base64, PLACEHOLDER_RE  # noqa: E402
+from server.image_store import save_base64  # noqa: E402
 
 logger = logging.getLogger("wabi.migrate_images")
 
@@ -94,8 +97,16 @@ def _extract_inline_data_uri(content: str) -> Optional[Tuple[str, str, str]]:
     return text, mime, b64
 
 
-def _already_migrated(content: str) -> bool:
-    return bool(PLACEHOLDER_RE.search(content or ""))
+def _already_migrated(image_refs) -> bool:
+    """A row whose image_refs array already has an entry was handled before."""
+    if image_refs is None:
+        return False
+    if isinstance(image_refs, str):
+        try:
+            image_refs = json.loads(image_refs)
+        except Exception:
+            return False
+    return bool(image_refs)
 
 
 async def migrate(apply: bool) -> None:
@@ -105,7 +116,7 @@ async def migrate(apply: bool) -> None:
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, user_id, content FROM messages "
+                "SELECT id, user_id, content, image_refs FROM messages "
                 "WHERE content LIKE '%data:image/%;base64,%' "
                 "ORDER BY id ASC"
             )
@@ -120,7 +131,7 @@ async def migrate(apply: bool) -> None:
                 user_id = row["user_id"]
                 content = row["content"] or ""
 
-                if _already_migrated(content):
+                if _already_migrated(row["image_refs"]):
                     skipped += 1
                     continue
 
@@ -140,22 +151,22 @@ async def migrate(apply: bool) -> None:
                     failed += 1
                     continue
 
-                placeholder = f"[图片: {uid}]"
-                new_content = f"{text}\n\n{placeholder}" if text else placeholder
+                refs = [{"uuid": uid, "description": ""}]
 
                 if apply:
                     await conn.execute(
-                        "UPDATE messages SET content = $1, has_image = 1 WHERE id = $2",
-                        new_content,
+                        "UPDATE messages SET content = $1, image_refs = $2::jsonb, has_image = 1 WHERE id = $3",
+                        text,
+                        json.dumps(refs),
                         msg_id,
                     )
                 migrated += 1
                 logger.info(
-                    "Row %s (user=%s): %s bytes -> %s",
+                    "Row %s (user=%s): %s bytes -> image_refs[0].uuid=%s",
                     msg_id,
                     user_id,
                     len(b64),
-                    placeholder if apply else "(dry-run)",
+                    uid if apply else "(dry-run)",
                 )
 
             logger.info(

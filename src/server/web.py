@@ -14,12 +14,19 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
-from server.models import UserCreate, UserInfo, UserProfile, ChatMessage, WSIncoming, WSOutgoing
+from server.models import (
+    UserCreate,
+    UserInfo,
+    UserProfile,
+    ChatMessage,
+    ImageRef,
+    WSIncoming,
+    WSOutgoing,
+)
 from server.chat_manager import ChatManager
 from server.image_store import (
     save_base64 as image_save_base64,
     load_image as image_load,
-    format_placeholder,
 )
 
 
@@ -93,31 +100,24 @@ async def delete_user(user_id: str):
 async def get_history(user_id: str):
     """Get chat history for a user.
 
-    Image messages are represented as ``[图片: {uuid}]`` placeholders (optionally
-    with ``| description``). The frontend is responsible for rendering these by
-    fetching ``/api/images/{user_id}/{uuid}``.
+    ``content`` is plain user text. Attached images are returned in the
+    ``image_refs`` array (list of ``{uuid, description}`` objects); the
+    frontend fetches each via ``GET /api/images/{user_id}/{uuid}``.
     """
     history = await chat_manager.get_history(user_id)
     out = []
     for msg in history:
-        content = msg["content"]
-        if isinstance(content, list):
-            # Legacy multimodal rows (pre-Phase 2): collapse to text + inline data URI
-            text_parts = []
-            for p in content:
-                if p.get("type") == "text":
-                    text_parts.append(p["text"])
-                elif p.get("type") == "image_url":
-                    url = p["image_url"]["url"]
-                    text_parts.append(f"![image]({url})")
-            content_str = "\n\n".join(text_parts)
-        else:
-            content_str = str(content)
-
+        refs = msg.get("image_refs") or []
+        image_refs = [
+            ImageRef(uuid=r.get("uuid", ""), description=r.get("description", ""))
+            for r in refs
+            if isinstance(r, dict) and r.get("uuid")
+        ]
         out.append(ChatMessage(
             role=msg["role"],
-            content=content_str,
+            content=str(msg.get("content") or ""),
             timestamp=msg["timestamp"],
+            image_refs=image_refs,
         ))
     return out
 
@@ -191,20 +191,19 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
             )
 
             try:
-                # Build content for LangGraph
+                # Text and image UUIDs are stored in separate columns; the
+                # DB ``content`` field never contains image placeholders.
+                image_uuids: list[str] = []
                 if incoming.type == "image" and incoming.content:
-                    # Persist image bytes to the filesystem registry; the DB
-                    # and LLM only see a text placeholder "[图片: {uuid}]".
                     try:
-                        image_uuid = image_save_base64(
+                        uid = image_save_base64(
                             user_id, incoming.content, incoming.mime_type
                         )
+                        image_uuids.append(uid)
                     except Exception as e:
                         logger.error(f"Failed to persist image for {user_id}: {e}")
                         raise
-                    placeholder = format_placeholder(image_uuid)
-                    text = incoming.text.strip()
-                    content = f"{text}\n\n{placeholder}" if text else placeholder
+                    content = incoming.text.strip()
                 else:
                     content = incoming.content
 
@@ -218,7 +217,12 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
 
                 # Process through chat manager which invokes AI microservice
                 ai_response = ""
-                async for ai_chunk in chat_manager.process_message(user_id, content, user_context=user_context):
+                async for ai_chunk in chat_manager.process_message(
+                    user_id,
+                    content,
+                    user_context=user_context,
+                    image_uuids=image_uuids or None,
+                ):
                     if ai_chunk.get("type") == "thinking":
                         # Forward thinking chunk to frontend
                         thinking_response = WSOutgoing(

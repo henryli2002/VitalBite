@@ -59,9 +59,14 @@ class PostgresHistoryStore(HistoryStore):
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
-                    has_image INTEGER DEFAULT 0
+                    has_image INTEGER DEFAULT 0,
+                    image_refs JSONB NOT NULL DEFAULT '[]'::jsonb
                 )
             """)
+            # Idempotent column add for pre-existing DBs
+            await conn.execute(
+                "ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_refs JSONB NOT NULL DEFAULT '[]'::jsonb"
+            )
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS meal_logs (
                     id SERIAL PRIMARY KEY,
@@ -83,15 +88,61 @@ class PostgresHistoryStore(HistoryStore):
                 CREATE INDEX IF NOT EXISTS idx_meal_logs_user_ts
                 ON meal_logs(user_id, timestamp)
             """)
+            # One-shot migration: extract any legacy `[image: uuid | desc]` /
+            # `[图片: ...]` placeholders from `content` into the `image_refs`
+            # column, then strip them from `content`. Idempotent — subsequent
+            # runs find no more placeholders and no-op.
+            await self._migrate_placeholders_to_image_refs(conn)
+
+    async def _migrate_placeholders_to_image_refs(self, conn) -> int:
+        """Move legacy `[image: uuid | desc]` placeholders into image_refs."""
+        pattern = r'\[(?:image|图片):\s*([a-f0-9]{32})(?:\s*\|\s*([^\]]*))?\]'
+        rows = await conn.fetch(
+            "SELECT id, content FROM messages WHERE content ~* $1",
+            pattern,
+        )
+        if not rows:
+            return 0
+
+        import re as _re
+        compiled = _re.compile(pattern, _re.IGNORECASE)
+        migrated = 0
+        for row in rows:
+            content = row["content"] or ""
+            refs = []
+            for m in compiled.finditer(content):
+                uuid_hex = m.group(1).lower()
+                desc = (m.group(2) or "").strip()
+                refs.append({"uuid": uuid_hex, "description": desc})
+            new_content = compiled.sub("", content)
+            new_content = _re.sub(r"\n{3,}", "\n\n", new_content).strip()
+            await conn.execute(
+                "UPDATE messages SET content = $1, image_refs = $2::jsonb, "
+                "has_image = CASE WHEN jsonb_array_length($2::jsonb) > 0 THEN 1 ELSE has_image END "
+                "WHERE id = $3",
+                new_content,
+                json.dumps(refs),
+                row["id"],
+            )
+            migrated += 1
+        logger.info("Migrated %d rows: placeholders → image_refs column", migrated)
+        return migrated
 
     # ------------------------------------------------------------------
     # HistoryStore ABC implementation
     # ------------------------------------------------------------------
 
     async def save_message(
-        self, user_id: str, role: str, content: str, timestamp: str
+        self,
+        user_id: str,
+        role: str,
+        content: str,
+        timestamp: str,
+        image_refs: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         pool = await self._get_pool()
+        refs_json = json.dumps(image_refs or [], ensure_ascii=False)
+        has_image = 1 if image_refs else 0
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
@@ -106,35 +157,56 @@ class PostgresHistoryStore(HistoryStore):
                     timestamp,
                 )
                 await conn.execute(
-                    "INSERT INTO messages (user_id, role, content, timestamp) VALUES ($1, $2, $3, $4)",
+                    "INSERT INTO messages (user_id, role, content, timestamp, image_refs, has_image) "
+                    "VALUES ($1, $2, $3, $4, $5::jsonb, $6)",
                     user_id,
                     role,
                     content,
                     timestamp,
+                    refs_json,
+                    has_image,
                 )
+
+    @staticmethod
+    def _row_to_message(row) -> Dict[str, Any]:
+        raw_refs = row["image_refs"]
+        if isinstance(raw_refs, str):
+            try:
+                refs = json.loads(raw_refs)
+            except Exception:
+                refs = []
+        else:
+            refs = raw_refs or []
+        return {
+            "role": row["role"],
+            "content": row["content"],
+            "timestamp": row["timestamp"],
+            "image_refs": refs,
+        }
 
     async def load_history(self, user_id: str) -> List[Dict[str, Any]]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT role, content, timestamp FROM messages WHERE user_id = $1 ORDER BY id ASC",
+                "SELECT role, content, timestamp, image_refs FROM messages "
+                "WHERE user_id = $1 ORDER BY id ASC",
                 user_id,
             )
-            return [dict(row) for row in rows]
+            return [self._row_to_message(row) for row in rows]
 
     async def load_history_since(
         self, user_id: str, since_ts: str
     ) -> List[Dict[str, Any]]:
-        pool = await self._get_pool()
         """Load messages for a user since a given ISO timestamp."""
+        pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT role, content, timestamp FROM messages "
+                "SELECT role, content, timestamp, image_refs FROM messages "
                 "WHERE user_id = $1 AND timestamp >= $2 ORDER BY id ASC",
                 user_id,
                 since_ts,
             )
-            return [dict(row) for row in rows]
+            return [self._row_to_message(row) for row in rows]
 
     async def load_recent_messages(
         self, user_id: str, limit: int = 50
@@ -143,51 +215,51 @@ class PostgresHistoryStore(HistoryStore):
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT role, content, timestamp FROM "
-                "(SELECT role, content, timestamp, id FROM messages "
+                "SELECT role, content, timestamp, image_refs FROM "
+                "(SELECT role, content, timestamp, image_refs, id FROM messages "
                 "WHERE user_id = $1 ORDER BY id DESC LIMIT $2) sub "
                 "ORDER BY id ASC",
                 user_id,
                 limit,
             )
-            return [dict(row) for row in rows]
+            return [self._row_to_message(row) for row in rows]
 
     async def update_image_description(
         self, user_id: str, image_uuid: str, description: str
     ) -> int:
-        """Rewrite the most recent `[图片: {uuid}]` placeholder to include a description.
+        """Patch the description for an image UUID in the most recent message's image_refs.
 
-        Returns the number of rows affected. Uses a LIKE search constrained by
-        user_id; also re-matches existing placeholders with old descriptions so
-        repeated calls overwrite rather than duplicate.
+        Returns the number of rows affected. Scoped to user_id. Idempotent —
+        repeated calls overwrite the description rather than duplicating.
         """
-        import re as _re
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, content FROM messages "
-                "WHERE user_id = $1 AND content LIKE $2 "
-                "ORDER BY id DESC LIMIT 5",
+            # Find the most recent message for this user that references the uuid
+            row = await conn.fetchrow(
+                "SELECT id, image_refs FROM messages "
+                "WHERE user_id = $1 "
+                "  AND image_refs @> jsonb_build_array(jsonb_build_object('uuid', $2::text)) "
+                "ORDER BY id DESC LIMIT 1",
                 user_id,
-                f"%{image_uuid}%",
+                image_uuid,
             )
-            pattern = _re.compile(
-                rf"\[图片:\s*{_re.escape(image_uuid)}(?:\s*\|\s*[^\]]*)?\]",
-                _re.IGNORECASE,
+            if row is None:
+                return 0
+            raw_refs = row["image_refs"]
+            if isinstance(raw_refs, str):
+                refs = json.loads(raw_refs)
+            else:
+                refs = raw_refs or []
+            updated = [
+                {**r, "description": description} if r.get("uuid") == image_uuid else r
+                for r in refs
+            ]
+            await conn.execute(
+                "UPDATE messages SET image_refs = $1::jsonb WHERE id = $2",
+                json.dumps(updated, ensure_ascii=False),
+                row["id"],
             )
-            new_placeholder = f"[图片: {image_uuid} | {description}]"
-            updates: List[tuple[int, str]] = []
-            for row in rows:
-                content = row["content"] or ""
-                if pattern.search(content):
-                    updates.append((row["id"], pattern.sub(new_placeholder, content)))
-            for msg_id, new_content in updates:
-                await conn.execute(
-                    "UPDATE messages SET content = $1 WHERE id = $2",
-                    new_content,
-                    msg_id,
-                )
-            return len(updates)
+            return 1
 
     async def delete_history(self, user_id: str) -> None:
         pool = await self._get_pool()

@@ -184,7 +184,9 @@ Only mark as unsafe if the content contains:
 - Self-harm or suicide references ("self_harm")
 - Dangerous, toxic, or poisoned food, or any severe food safety risk (e.g. eating poisonous mushrooms, intentionally spoiling food) ("food_safety_risk")
 
-Be lenient with normal food-related queries, even if they mention dietary restrictions or health concerns. Only flag severe food safety risks."""
+Be lenient with normal food-related queries, even if they mention dietary restrictions or health concerns. Only flag severe food safety risks.
+
+CRITICAL EXCEPTION: Requests to change language (e.g., "please use english", "speak chinese"), formatting, or persona strictly related to normal assistant behavior are SAFE and MUST NOT be flagged as unsafe."""
 
     last_error = None
     structured_llm = client.with_structured_output(SafetyCheck)
@@ -260,7 +262,7 @@ Be lenient with normal food-related queries, even if they mention dietary restri
                 f"[{node_name}] Guardrail LLM check failed on attempt {attempt + 1}: {e}"
             )
             if attempt < 2:
-                await asyncio.sleep(random.uniform(0, min(5.0, 0.3 * (2 ** attempt))))
+                await asyncio.sleep(random.uniform(0, min(5.0, 0.3 * (2**attempt))))
 
     # On error, default to safe but log the issue
     logger.error(

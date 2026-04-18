@@ -53,13 +53,25 @@ class MealLog(BaseModel):
     metadata_json: str = "{}"
 
 
+class ImageRef(BaseModel):
+    """A reference to a stored image attached to a message."""
+
+    uuid: str = Field(..., description="32-hex filesystem handle")
+    description: str = Field("", description="Short recognised-food summary, if analysed")
+
+
 class ChatMessage(BaseModel):
-    """A single chat message for API transport."""
+    """A single chat message for API transport.
+
+    ``content`` is plain text; attached images are enumerated in ``image_refs``
+    — the frontend renders them separately by fetching
+    ``/api/images/{user_id}/{uuid}``.
+    """
 
     role: str = Field(..., description="'user' or 'assistant'")
     content: str
     timestamp: str
-    has_image: bool = False
+    image_refs: List[ImageRef] = Field(default_factory=list)
 
 
 class WSIncoming(BaseModel):

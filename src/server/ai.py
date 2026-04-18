@@ -116,27 +116,50 @@ def build_thinking_partial(
     return None
 
 
+def _format_image_annotation(refs: List[Dict[str, Any]]) -> str:
+    """Trusted, server-injected annotation describing attached images.
+
+    Synthesised on the fly from the ``image_refs`` column (never stored in the
+    text ``content`` column). The Supervisor system prompt teaches the LLM to
+    look for these ``<attached_image uuid=.../>`` markers and pass the UUID to
+    the ``analyze_food_image`` tool.
+    """
+    lines = []
+    for ref in refs or []:
+        if not isinstance(ref, dict):
+            continue
+        uid = (ref.get("uuid") or "").strip()
+        if not uid:
+            continue
+        desc = (ref.get("description") or "").strip()
+        if desc:
+            lines.append(f"<attached_image uuid={uid} description=\"{desc}\"/>")
+        else:
+            lines.append(f"<attached_image uuid={uid}/>")
+    return "\n".join(lines)
+
+
 def build_langchain_messages(history: List[Dict]) -> List[BaseMessage]:
-    """Convert JSON messages back into LangChain message objects."""
+    """Convert JSON messages back into LangChain message objects.
+
+    For user messages with attached images, the trusted ``image_refs`` list is
+    rendered as ``<attached_image uuid=.../>`` markers and appended to the
+    text. The Supervisor never parses UUIDs out of the raw user text — it only
+    trusts these server-injected markers.
+    """
     messages = []
     for msg in history:
         role = msg.get("role")
-        content = msg.get("content")
+        content = msg.get("content") or ""
         timestamp = msg.get("timestamp")
+        refs = msg.get("image_refs") or []
+        extra = {"timestamp": timestamp} if timestamp else {}
         if role == "user":
-            messages.append(
-                HumanMessage(
-                    content=content,
-                    additional_kwargs={"timestamp": timestamp} if timestamp else {},
-                )
-            )
+            annotation = _format_image_annotation(refs)
+            final_content = f"{content}\n\n{annotation}" if (content and annotation) else (annotation or content)
+            messages.append(HumanMessage(content=final_content, additional_kwargs=extra))
         elif role == "assistant":
-            messages.append(
-                AIMessage(
-                    content=content,
-                    additional_kwargs={"timestamp": timestamp} if timestamp else {},
-                )
-            )
+            messages.append(AIMessage(content=content, additional_kwargs=extra))
     return messages
 
 

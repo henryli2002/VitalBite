@@ -15,10 +15,7 @@ from datetime import datetime, timezone, timedelta
 import os
 from typing import Dict, List, Optional, Any
 
-import httpx
 import redis.asyncio as redis
-
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
 
 logger = logging.getLogger("wabi.chat")
 
@@ -41,7 +38,14 @@ class HistoryStore(ABC):
     """Abstract base class for chat history persistence."""
 
     @abstractmethod
-    async def save_message(self, user_id: str, role: str, content: str, timestamp: str) -> None:
+    async def save_message(
+        self,
+        user_id: str,
+        role: str,
+        content: str,
+        timestamp: str,
+        image_refs: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         ...
 
     @abstractmethod
@@ -149,15 +153,12 @@ class ChatManager:
         return await self.store.delete_user(user_id)
 
     async def get_history(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get message history for a user."""
-        history = await self.store.load_history(user_id)
-        for msg in history:
-            try:
-                if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
-                    msg["content"] = json.loads(msg["content"])
-            except Exception:
-                pass
-        return history
+        """Get message history for a user.
+
+        Rows include ``image_refs`` (a list of ``{uuid, description}`` dicts);
+        the text ``content`` field is plain text with no image placeholders.
+        """
+        return await self.store.load_history(user_id)
 
     async def save_profile(self, user_id: str, profile: Dict[str, Any]) -> None:
         """Save user profile."""
@@ -167,36 +168,25 @@ class ChatManager:
         """Load user profile."""
         return await self.store.load_profile(user_id)
 
-    def _build_langchain_messages(self, history: List[Dict[str, Any]]) -> List[AnyMessage]:
-        """Convert stored history dicts to LangChain message objects."""
-        messages: List[AnyMessage] = []
-        for msg in history:
-            if msg["role"] == "user":
-                messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "assistant":
-                messages.append(AIMessage(content=msg["content"]))
-        return messages
-
     async def process_message(
         self,
         user_id: str,
-        content: Any,
+        content: str,
         user_context: Optional[Dict[str, Any]] = None,
+        image_uuids: Optional[List[str]] = None,
     ):
-        """Process a user message through the LangGraph graph, yielding updates."""
+        """Process a user message through the LangGraph graph, yielding updates.
+
+        ``content`` is plain user text. ``image_uuids`` is a trusted list of
+        image UUIDs (already persisted to the filesystem registry) — they are
+        stored in a dedicated column, NOT embedded into ``content``.
+        """
         now = datetime.now(timezone.utc).isoformat()
+        text = content if isinstance(content, str) else str(content)
+        refs = [{"uuid": uid, "description": ""} for uid in (image_uuids or []) if uid]
 
-        # Build the user message
-        if isinstance(content, str):
-            new_msg = HumanMessage(content=content)
-            save_content = content
-        else:
-            # Multimodal content (text + images)
-            new_msg = HumanMessage(content=content)
-            save_content = json.dumps(content)
-
-        # Save user message to DB
-        await self.store.save_message(user_id, "user", save_content, now)
+        # Save user message to DB (text and image UUIDs in separate columns)
+        await self.store.save_message(user_id, "user", text, now, image_refs=refs)
 
         # Load user profile and name
         user_profile = await self.store.load_profile(user_id)
@@ -205,26 +195,18 @@ class ChatManager:
 
         # --- Load conversation history ---
         # With the Supervisor architecture, we load recent messages instead of
-        # the old two-phase (today's history �� full history for goalplanning).
+        # the old two-phase (today's history → full history for goalplanning).
         # The Supervisor can query meal_logs via tools for historical data.
         load_recent = getattr(self.store, "load_recent_messages", None)
         if load_recent:
             recent_history = await load_recent(user_id, limit=50)
         else:
-            # Fallback: load today's history (legacy stores)
             day_boundary = _get_day_boundary((user_context or {}).get("timezone"))
             load_method = getattr(self.store, "load_history_since", None)
             if load_method:
                 recent_history = await load_method(user_id, day_boundary)
             else:
                 recent_history = await self.store.load_history(user_id)
-
-        for msg in recent_history:
-            try:
-                if isinstance(msg["content"], str) and msg["content"].startswith("[") and '"image_url"' in msg["content"]:
-                    msg["content"] = json.loads(msg["content"])
-            except Exception:
-                pass
 
         # --- Payload Construction for Microservice ---
         session_id = f"web_{user_id}_{int(time.time())}"

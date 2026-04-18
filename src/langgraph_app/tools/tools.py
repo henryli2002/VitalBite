@@ -50,13 +50,14 @@ async def search_restaurants_tool(
     if lat is not None and lng is not None:
         lat_lng = (lat, lng)
 
-    results = await map_tool.search_restaurants(
+    batch = await map_tool.search_restaurants(
         location=location,
         cuisine_type=cuisine_type,
         radius_km=radius_km,
         lat_lng=lat_lng,
-        max_results=max_results if max_results is not None else 5
+        max_results=max_results if max_results is not None else 5,
     )
+    results = batch.get("restaurants", []) if isinstance(batch, dict) else []
 
     if not results:
         return json.dumps({"status": "error", "message": "No restaurants found matching the criteria or API error occurred."})

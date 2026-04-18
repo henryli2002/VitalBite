@@ -1,8 +1,8 @@
 """Filesystem-backed image registry.
 
-Images are stored under ``data/images/{user_id}/{uuid}.{ext}``. The database
-only keeps a short placeholder ``[图片: {uuid}]`` (optionally enriched with a
-description by ``analyze_food_image``).
+Images are stored under ``data/images/{user_id}/{uuid}.{ext}``. Image UUIDs
+attached to a chat message are tracked in the ``messages.image_refs`` JSONB
+column; the text ``content`` column never contains image placeholders.
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _IMAGES_ROOT = Path(os.environ.get("WABI_IMAGES_ROOT", _PROJECT_ROOT / "data" / "images"))
 
 _UUID_RE = re.compile(r"^[a-f0-9]{32}$", re.IGNORECASE)
-PLACEHOLDER_RE = re.compile(r"\[图片:\s*([a-f0-9]{32})(?:\s*\|\s*([^\]]*))?\]", re.IGNORECASE)
 
 
 def _safe_user_dir(user_id: str) -> Path:
@@ -66,7 +65,6 @@ def save_base64(user_id: str, data_uri_or_b64: str, mime_type: str = "image/jpeg
     s = data_uri_or_b64
     detected_mime = mime_type
     if s.startswith("data:"):
-        # data:image/jpeg;base64,AAA...
         try:
             header, _, body = s.partition(",")
             if ";base64" in header:
@@ -84,12 +82,10 @@ def _find_path(user_id: str, image_uuid: str) -> Optional[Path]:
     d = _IMAGES_ROOT / user_id
     if not d.exists():
         return None
-    # Fast path: common extensions
     for ext in ("jpg", "jpeg", "png", "webp", "gif"):
         p = d / f"{image_uuid}.{ext}"
         if p.exists():
             return p
-    # Fallback: glob
     for p in d.glob(f"{image_uuid}.*"):
         return p
     return None
@@ -124,16 +120,3 @@ def delete_user_images(user_id: str) -> int:
     except OSError:
         pass
     return count
-
-
-def format_placeholder(image_uuid: str, description: Optional[str] = None) -> str:
-    if description:
-        return f"[图片: {image_uuid} | {description}]"
-    return f"[图片: {image_uuid}]"
-
-
-def extract_uuids(text: str) -> list[str]:
-    """Return all image UUIDs referenced in a message body."""
-    if not text or not isinstance(text, str):
-        return []
-    return [m.group(1).lower() for m in PLACEHOLDER_RE.finditer(text)]
