@@ -178,9 +178,23 @@ Tool 返回后，从结果中提取食物名+热量拼成短描述，UPDATE mess
 
 ---
 
+## Phase 2.5: 前端渲染栈重构 ✅ 已完成
+
+**目标**：消除手写 `renderMarkdown` 的脆弱正则链，统一特殊控件的表达方式。
+
+- **vendored markdown-it**：`src/frontend/vendor/markdown-it.min.js`，CommonMark 解析器替换手写 80 行正则渲染。`html: false` 默认 XSS 安全。
+- **Fence-based 控件协议**：`nutrition` / `restaurants` 两类特殊渲染改为 fenced block，LLM 只需产出 JSON，widget handler 渲染为卡片。未识别的 fence 降级为普通 `<code>`。
+- **图片统一包裹**：刚上传的 data URL 与 DB 回读的 `/api/images/{uuid}` 统一走 `<figure class="chat-image">`，CSS 尺寸约束一致。
+- **Output Guardrail 修正**：输出侧跳过正则检测（自生成文本不是攻击向量），只留 LLM 内容安全。修复了"列 Markdown 健康指南表被拦截"等假阳性。
+- **烟雾测试**：`scripts/smoke_markdown_it.js` 在 node `vm.createContext` 中覆盖 8 个核心渲染路径。
+
+---
+
 ## Phase 3: 复合任务拆解 (Multi-Step Intent Resolution)
 
 **目标**：让 Agent 能在一轮对话中聪明地连续执行多步操作。
+
+> 注：Supervisor 本身已是 react loop，具备工具串联能力。此 Phase 聚焦于 Prompt 强化与用户感知层反馈。
 
 ### 行动 3.1: 优化 Supervisor Prompt
 
@@ -255,25 +269,33 @@ Tool 返回后，从结果中提取食物名+热量拼成短描述，UPDATE mess
 
 ## Phase 清理: 删除遗留代码
 
-在全部 Phase 验证通过后：
+在 Phase 3 / Phase 4 验证通过后：
 - `USE_SUPERVISOR` 默认改为 `1`，删除老图代码
 - 删除：`agents/chitchat/agent.py`, `agents/goalplanning/agent.py`, `agents/food_recognition/agent.py`（保留 `predictor.py`, `schemas.py`）, `agents/food_recommendation/agent.py`, `orchestrator/nodes/router.py`
 - 合并 `supervisor_state.py` → `state.py`
+
+**已完成的小清理**（每次 PR 顺带收尾）：
+- ✅ 根目录 `test_*.py` / `get_last_msg.py` 等探针脚本 (v4.0.0)
+- ✅ `renderMarkdown` 手写正则链 (Phase 2.5)
 
 ---
 
 ## 依赖关系
 
 ```
-Phase 1 (Supervisor + Tools + graph 重写 + chat_manager 简化)
+Phase 1 ✅ (Supervisor + Tools + graph 重写 + chat_manager 简化)
   │
   v
-Phase 2 (Image Registry) ──── 可与 Phase 3 并行
-  │
-Phase 3 (复合任务 + 流式反馈) ── 可与 Phase 2 并行
+Phase 2 ✅ (Image Registry)
   │
   v
-Phase 4 (Weekly Planner + meal log + 快照)
+Phase 2.5 ✅ (markdown-it + fence 控件 + guardrail 修正)
+  │
+  v
+Phase 3  (复合任务 prompt + 流式反馈)   ← 下一步
+  │
+  v
+Phase 4  (Weekly Planner + meal log + 快照)
   │
   v
 清理遗留代码

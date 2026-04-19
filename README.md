@@ -1,6 +1,6 @@
 # WABI — 健康饮食与营养分析
 
-基于 LangGraph 的多智能体营养助手，支持食物识别、餐厅推荐和饮食目标规划。
+基于 LangGraph 的 Supervisor Agent 营养助手。食物识别、餐厅推荐、饮食规划，通过 Tool-calling 在一轮对话中组合执行。
 
 ---
 
@@ -12,17 +12,19 @@
       ▼
 wabi-web (FastAPI · 端口 8000)
   · WebSocket 长连接 · 多用户 Session · PostgreSQL 持久化
+  · 图片拦截：base64 → image_store → UUID 占位符（DB 不再存原图）
   · 将 AI 任务推入 Redis 任务队列 (wabi_ai_queue)
       │ Redis Pub/Sub
       ▼
 wabi-ai (LangGraph Worker · 端口 8001)
-  · 200 并发 Worker · Agent 编排流水线
+  · Supervisor Agent (react loop) + Tool Node
   · 结果通过 Redis Pub/Sub 推回对应客户端
       │
       ▼
 基础设施
-  · PostgreSQL  — 聊天历史 · 用户档案
+  · PostgreSQL  — 聊天历史 · 用户档案 · 图片 UUID 引用
   · Redis       — 任务队列 · IP 地理位置缓存 · Pub/Sub
+  · 本地磁盘     — data/images/{user_id}/{uuid}.jpg 图片 Registry
 ```
 
 ---
@@ -31,34 +33,38 @@ wabi-ai (LangGraph Worker · 端口 8001)
 
 ```
 用户消息
-  └─► input_guardrail (安全检测)
-        └─► router (意图识别 · 实时流式)
-              ├─► recognition   (食物识别 · 4 步流水线)
-              ├─► recommendation (餐厅推荐 · Google Maps)
-              ├─► goalplanning  (目标规划 · 全量历史)
-              └─► chitchat      (通用对话)
-                    └─► output_guardrail
+  └─► input_guardrail (安全检测 · 正则 + LLM 双层)
+        └─► supervisor_agent (react loop)
+              │
+              │  ┌────────── 决策 ──────────┐
+              │  │                          │
+              │  ▼                          ▼
+              │  直接回复               Tool 调用
+              │                         · analyze_food_image(image_uuid)
+              │                         · search_restaurants(query, ...)
+              │                         └─► 结果喂回 → 再次决策
+              ▼
+        output_guardrail (仅 LLM 内容安全，跳过正则)
+              └─► END
 ```
 
-**意图分类（4 类）**
-
-| 意图 | 触发条件 |
-|------|----------|
-| `recognition` | 消息含食物图片 |
-| `recommendation` | 询问附近餐厅、饥饿信号 + 用餐时间 |
-| `goalplanning` | 饮食规划、营养目标、历史摄入回顾 |
-| `chitchat` | 默认：问候、模糊输入、无图识别请求 |
+**Supervisor 核心特性**
+- 系统提示注入：用户档案、长期画像、当前时间/餐次、每日热量参考、语言
+- `MAX_TOOL_CALLS_PER_TURN` 限流；Tool 失败返回 `{"error": ...}` 由 Supervisor 决策降级
+- `user_id`/`user_context` 通过 `RunnableConfig.configurable` 隐式传递，不污染 Tool 签名
+- 流式 thinking：每次 Tool 调用前后 Pub/Sub 推送状态给前端
 
 ---
 
 ## 功能说明
 
-- **多模态食物识别**：LLM 目标检测 → 图像裁剪 → 本地 fine-tuned 模型逐项预测营养 → LLM 汇总
-- **动态时区**：前端传 IANA 时区，IP 自动回落，影响餐次判断（早/中/晚餐）、recognition 推荐评估、今日消息截断边界（3AM）
-- **实时 Thinking 流**：router 节点原生 token streaming，前端气泡实时更新
+- **多模态食物识别**：LLM 目标检测 → 图像裁剪 → 本地 fine-tuned 模型逐项预测营养 → Supervisor 生成总结
+- **图片 Registry**：WebSocket 拦截 base64，落盘为 `data/images/{user_id}/{uuid}.jpg`，DB 只保留占位符 `[image: uuid | 汉堡+薯条, 850kcal]`。消除 base64 在数据库与 Redis Pub/Sub 中的膨胀。
+- **结构化渲染**：前端用 vendored markdown-it 解析；特殊控件通过 fenced block 表达（` ```restaurants ` / ` ```nutrition `），widget handler 拦截渲染为卡片，未识别 fence 回退为普通代码块。
+- **动态时区**：前端传 IANA 时区，IP 自动回落，影响餐次判断、日期边界（3AM）
 - **多 LLM 后端**：统一接口支持 Google Gemini（默认）、OpenAI、AWS Bedrock、llama.cpp 本地模型
-- **goalplanning 两阶段**：Phase 1 用今日消息快速检测意图，Phase 2 携带完整历史执行规划
-- **并发背压**：Semaphore 限流，recognition ≤ 50 并发，chitchat ≤ 200 并发
+- **双层 Guardrail**：输入侧正则 + LLM 双层；输出侧跳过正则（避免对模型自身 Markdown/内联代码/健康建议措辞误判），仅走 LLM 内容安全
+- **并发背压**：Semaphore 限流，recognition/recommendation/chitchat 独立通道
 
 ---
 
@@ -66,12 +72,14 @@ wabi-ai (LangGraph Worker · 端口 8001)
 
 | 层 | 技术 |
 |----|------|
-| 编排框架 | LangGraph 0.3+ · LangChain 0.3+ |
+| 编排框架 | LangGraph 0.6+ · LangChain 0.3+ |
+| Agent | Supervisor via `create_react_agent` (LLM ↔ Tool 循环) |
 | Web 服务 | FastAPI · Uvicorn · WebSocket |
 | AI 模型 | Google Gemini 2.5 Flash · OpenAI · AWS Bedrock · llama.cpp |
 | 数据库 | PostgreSQL (asyncpg · 连接池) |
 | 缓存/队列 | Redis asyncio |
-| 图像处理 | Pillow · base64 |
+| 图像处理 | Pillow · 本地磁盘 Registry |
+| 前端渲染 | 原生 JS + vendored markdown-it (CommonMark) |
 | 容器化 | Docker · Docker Compose |
 
 ---
@@ -109,60 +117,84 @@ docker-compose up -d --build
 | 独立数据库 (PostgreSQL) | localhost:5433 |
 | 独立缓存/队列 (Redis) | localhost:6380 |
 
+### 3. 历史图片迁移（一次性，仅老数据需要）
+
+```bash
+docker exec wabi-ai python scripts/migrate_images.py
+```
+
+将 messages 表里残留的 base64 抽出存盘并替换为 UUID 占位符。
+
 ---
 
 ## 目录结构
 
-系统经过标准重构，采用统一的 `src` 顶级包管理结构。
-
 ```
 WABI/
 ├── src/
-│   ├── langgraph_app/             # AI 核心业务逻辑 (LangGraph)
-│   │   ├── agents/                # 各类 Agent (将降级为 Tools)
-│   │   │   ├── chitchat/          # 通用对话
-│   │   │   ├── goalplanning/      # 营养目标规划
-│   │   │   ├── food_recognition/  # 多模态食物识别
-│   │   │   └── food_recommendation/ # 餐厅推荐
-│   │   ├── orchestrator/          # 工作流编排
-│   │   │   ├── graph.py           # LangGraph 工作流定义
-│   │   │   ├── state.py           # GraphState schema
-│   │   │   └── nodes/             # 路由与安全网关
-│   │   ├── tools/                 # 外部工具 (Maps, IP, etc.)
-│   │   └── utils/                 # 通用脚手架 (重试, 并发, LLM 工厂)
-│   ├── server/                    # Web / Worker 服务入口
-│   │   ├── web.py                 # FastAPI API 入口 (WebSocket)
-│   │   ├── ai.py                  # AI Worker 独立进程 (Dispatcher)
-│   │   ├── chat_manager.py        # 会话管理与队列分发
-│   │   ├── db.py                  # PostgreSQL 存储适配层
-│   │   └── models.py              # Pydantic 数据模型
-│   └── frontend/                  # 原生 JS/HTML 前端静态文件
-├── eval/                          # 模型评估框架
-├── tests/                         # 负载测试 · 准确率测试
-├── docker/                        # 容器化配置
-└── Next.md                        # 系统演进路线与架构蓝图
+│   ├── langgraph_app/
+│   │   ├── orchestrator/
+│   │   │   ├── graph.py                # input_guardrail → supervisor → output_guardrail
+│   │   │   ├── supervisor.py           # Supervisor react loop + system prompt
+│   │   │   ├── supervisor_state.py     # 简化 State
+│   │   │   └── nodes/
+│   │   │       └── guardrails/         # 正则 + LLM 双层
+│   │   ├── tools/
+│   │   │   ├── food_recognition_tool.py  # analyze_food_image (uuid 入参)
+│   │   │   ├── recommendation_tool.py    # search_restaurants
+│   │   │   ├── map/                      # Google Maps / IP 定位
+│   │   │   └── tools.py
+│   │   ├── agents/                     # 保留 predictor.py / schemas.py；旧 agent.py 待清理
+│   │   └── utils/
+│   │       ├── agent_utils.py          # build_profile_context / detect_meal_time / TDEE
+│   │       ├── cascade.py              # LLM 降级级联
+│   │       ├── retry.py                # 指数退避 + Full Jitter
+│   │       └── semaphores.py
+│   ├── server/
+│   │   ├── web.py                      # FastAPI + WebSocket + /api/images/{uuid}
+│   │   ├── ai.py                       # AI Worker Dispatcher
+│   │   ├── chat_manager.py             # 会话管理 · 最近 N 条历史加载
+│   │   ├── image_store.py              # 图片 Registry（save/load/update_description）
+│   │   ├── db.py                       # PostgresHistoryStore
+│   │   └── models.py
+│   └── frontend/
+│       ├── index.html
+│       ├── app.js                      # 渲染 · markdown-it · fence handlers
+│       ├── styles.css
+│       └── vendor/markdown-it.min.js
+├── scripts/
+│   ├── migrate_images.py               # 老数据 base64 → UUID 迁移
+│   ├── smoke_image_refs.py             # /api/images/{uuid} 链路烟雾
+│   └── smoke_markdown_it.js            # 前端渲染器烟雾 (node, 无 headless 浏览器)
+├── eval/
+├── tests/
+├── docker/
+├── data/images/                        # 图片 Registry (运行时生成)
+└── Next.md                             # 系统演进路线
 ```
 
 ---
 
 ## 更新日志
 
+### v4.0.0 (2026-04) — Supervisor 迁移 + 图片 Registry
+- **Supervisor Agent**：Router + 4 Agent 静态 DAG 替换为 `create_react_agent` 的 LLM ↔ Tool 循环。支持复合意图（"看看健康吗，并推荐类似的"）单轮解决。
+- **图片 Registry**：WebSocket 层拦截 base64，落盘 `data/images/{user_id}/{uuid}.jpg`，DB 只存占位符。消除 messages 表与 Redis Pub/Sub 上的 base64 膨胀；识别工具返回后自动回写 `汉堡+薯条, 850kcal` 描述。历史数据可通过 `scripts/migrate_images.py` 迁移。
+- **渲染栈重构**：手写 `renderMarkdown` 下线，改用 vendored markdown-it。营养卡与餐厅卡统一经由 ` ```nutrition ` / ` ```restaurants ` fenced block 表达，widget handler 拦截；未识别 fence 回退普通 code block。
+- **Output Guardrail 修正**：输出侧跳过正则层，避免模型自身 Markdown 措辞（inline code、"you must"、JSON 示例）被误判为 prompt injection；LLM 内容安全层仍然生效。
+- **图片渲染一致性**：刚上传的图片与 DB 回读的图片统一走 `figure.chat-image` 包裹，CSS 尺寸约束一致（不再"发送时巨大 / 刷新后正常"）。
+
 ### v3.2.0 (2026-04)
-- **优雅重试与降级 (Retry & Cascade)**：实现了带有 Full Jitter 的指数退避重试 (`utils/retry.py`)，及基于 Llamacpp 的降级策略 (`utils/cascade.py`)，极大提升了对外部 API (LLM/Google Maps) 限流和超时的容错率。
-- **并发调度器重构**：废弃了 200 个低效常驻 async worker，采用单 Dispatcher 监听队列，结合 `semaphores.py` 动态控制并发，消除了线程阻塞风险，提升了系统的垂直扩展能力。
-- **降级 UI 标记**：LLM 降级触发时自动通过 `additional_kwargs["degraded"]` 和 `additional_kwargs["nutrition_source"]` 透传状态，为前端展示弱网/预估角标提供支持。
+- **优雅重试与降级**：Full Jitter 指数退避 (`utils/retry.py`) + 基于 llamacpp 的降级 (`utils/cascade.py`)，对外部 API 限流和超时的容错率显著提升。
+- **并发调度器重构**：废弃 200 个低效常驻 async worker，改为单 Dispatcher + `semaphores.py` 动态并发控制。
+- **降级 UI 标记**：LLM 降级触发时通过 `additional_kwargs["degraded"]` / `additional_kwargs["nutrition_source"]` 透传给前端。
 
 ### v2.3.0 (2026-04)
-- 时区全链路：前端传 IANA 时区 → IP 自动回落 → 影响餐次判断、recognition 推荐评估、3AM 日期边界
-- Router 流式修复：删除 `TrackedChatModel` 包装层，恢复原生 token streaming
-- Goalplanning 三重执行修复：3 次图执行 → 2 次，修复双发布 Bug
-- Tutorial Agent 移除：相关功能合并入 chitchat，路由简化为 4 类意图
-- Redis 单例化：chat_manager、router、food_recognition 统一模块级懒初始化
-- N+1 查询修复：`list_users` 改为单次 `LEFT JOIN`
-- `inject_dynamic_context` 转义 Bug 修复：`\\n\\n` → `\n\n`
-- `datetime.utcnow()` 废弃警告消除：全部迁移至 `datetime.now(timezone.utc)`
+- 时区全链路：前端传 IANA 时区 → IP 回落 → 影响餐次判断、3AM 日期边界
+- Router 流式修复；Goalplanning 三重执行修复；Tutorial Agent 合并入 chitchat
+- Redis 单例化；`list_users` N+1 修复
 
 ### v2.2.0 (2026-03)
 - 架构升级：SQLite → PostgreSQL + Redis 异步微服务
-- 多模态增强：修复图像 base64 在 Redis 传输中的丢失问题
+- 多模态增强：修复图像 base64 在 Redis 传输中的丢失
 - 数据隔离：生产环境过滤测试账号
