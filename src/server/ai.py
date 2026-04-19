@@ -20,6 +20,10 @@ import redis.asyncio as redis
 
 # Import graph *after* .env is fully populated in os.environ
 from langgraph_app.orchestrator.graph import graph
+from langgraph_app.orchestrator.thinking import (
+    build_thinking_partial,
+    build_thinking_partials,
+)
 
 app = FastAPI(title="WABI AI Worker Node", version="1.0.0")
 logger = logging.getLogger("wabi.ai.worker")
@@ -32,88 +36,6 @@ redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 # Track the dispatcher task for health reporting
 _active_tasks: set[asyncio.Task] = set()
 _dispatcher_task: asyncio.Task | None = None
-
-
-def build_thinking_partial(
-    node_name: str, node_output: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-    """Build frontend-friendly partial thinking payload for each key node."""
-
-    # --- Supervisor architecture nodes ---
-    if node_name == "supervisor":
-        # The supervisor node wraps the react agent; its output contains messages
-        # including tool calls and responses. Extract useful info.
-        messages = node_output.get("messages", []) or []
-        if not messages:
-            return None
-        last = messages[-1] if messages else None
-        if last is None:
-            return None
-        # Check for tool call messages (AIMessage with tool_calls)
-        tool_calls = getattr(last, "tool_calls", None)
-        if tool_calls:
-            tool_names = [tc.get("name", "unknown") for tc in tool_calls]
-            return {
-                "status": "partial",
-                "node": "tool_call",
-                "analysis": {"reasoning": f"Calling tools: {', '.join(tool_names)}"},
-            }
-        return None
-
-    if node_name == "tools":
-        # Tool execution results from the react agent
-        messages = node_output.get("messages", []) or []
-        if messages:
-            last = messages[-1]
-            content = getattr(last, "content", "")
-            if content:
-                snippet = str(content)[:200]
-                return {
-                    "status": "partial",
-                    "node": "tool_result",
-                    "analysis": {"reasoning": f"Tool returned: {snippet}"},
-                }
-        return None
-
-    # --- Legacy architecture nodes ---
-    if node_name in ("router", "intent_router"):
-        analysis = node_output.get("analysis")
-        if analysis:
-            return {"status": "partial", "node": "intent_router", "analysis": analysis}
-        return None
-
-    if node_name == "chitchat":
-        messages = node_output.get("messages", []) or []
-        answer = ""
-        if messages and isinstance(messages, list):
-            first = messages[0]
-            answer = getattr(first, "content", "") if first else ""
-        if answer:
-            return {
-                "status": "partial",
-                "node": "chitchat",
-                "analysis": {"reasoning": f"Answering: {str(answer)[:180]}"},
-            }
-        return None
-
-    if node_name == "recommendation":
-        rec = node_output.get("recommendation_result") or {}
-        restaurants = rec.get("restaurants") or []
-        if not isinstance(restaurants, list) or not restaurants:
-            return None
-        names = [str(r.get("name", "")) for r in restaurants[:3] if isinstance(r, dict)]
-        names = [n for n in names if n]
-        if not names:
-            return None
-        return {
-            "status": "partial",
-            "node": "recommendation",
-            "analysis": {
-                "reasoning": f"Finding restaurants: Found restaurants: {', '.join(names)}"
-            },
-        }
-
-    return None
 
 
 def _format_image_annotation(refs: List[Dict[str, Any]]) -> str:
@@ -190,8 +112,14 @@ async def process_task(payload: Dict[str, Any]):
                 logger.info(f"[{user_id}] Node completed: {node_name}")
                 accumulated_state.update(node_output)
                 if response_channel:
-                    partial_payload = build_thinking_partial(node_name, node_output)
-                    if partial_payload:
+                    partial_payloads = []
+                    if node_name != "supervisor":
+                        partial_payloads = build_thinking_partials(
+                            node_name,
+                            node_output,
+                            context_messages=accumulated_state.get("messages", []),
+                        )
+                    for partial_payload in partial_payloads:
                         await redis_client.publish(
                             response_channel, json.dumps(partial_payload)
                         )

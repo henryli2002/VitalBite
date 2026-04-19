@@ -203,7 +203,7 @@ Tool 返回后，从结果中提取食物名+热量拼成短描述，UPDATE mess
 - "调用一个工具后，评估结果，决定是否需要调用下一个工具"
 - "对于'看看这个食物健康吗，并推荐类似的'，你应该先识别图片，再用识别结果中的菜系信息搜索餐厅"
 
-### 行动 3.2: 流式工具调用反馈 (Tool Call Streaming)
+### 行动 3.2: 流式工具调用反馈 (Tool Call Streaming) ✅ 已完成
 
 在 Supervisor react loop 的每次工具调用前后推送细粒度状态：
 - 调用前："Agent 正在识别图片..."
@@ -211,6 +211,11 @@ Tool 返回后，从结果中提取食物名+热量拼成短描述，UPDATE mess
 - 最终："生成回复中..."
 
 利用现有 Redis Pub/Sub `{"status": "partial"}` 协议，前端已支持 `thinking` 类型消息，无需前端改动。
+
+当前实现：
+- `graph.py` 中的 `supervisor_node` 改为流式消费内部 react loop 更新，不再等整个 Supervisor 结束后才统一出结果
+- 新增 `orchestrator/thinking.py`，把 `analyze_food_image` / `search_restaurants` 的 tool call 与 tool result 翻译为前端友好的状态文本
+- `ai.py` 保留 legacy 节点 partial 逻辑，但避免对 `supervisor` 外层节点重复发事件
 
 ### 验收标准
 

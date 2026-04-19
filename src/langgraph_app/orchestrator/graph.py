@@ -5,16 +5,23 @@ Supports two modes controlled by the USE_SUPERVISOR environment variable:
 - USE_SUPERVISOR=0: Legacy static Router + Workflow DAG (for rollback)
 """
 
+import json
 import os
 from typing import Literal
 
+import redis.asyncio as redis
 from langgraph.graph import StateGraph, END
+
+from langgraph_app.config import config as _app_config
+from langgraph_app.orchestrator.thinking import build_thinking_partials
+from langgraph_app.utils.utils import get_dominant_language
 
 
 # ---------------------------------------------------------------------------
 # Feature flag
 # ---------------------------------------------------------------------------
 USE_SUPERVISOR = os.getenv("USE_SUPERVISOR", "1") == "1"
+_redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 
 
 # ---------------------------------------------------------------------------
@@ -52,9 +59,38 @@ def _create_supervisor_graph():
         # We pass it via the input since create_react_agent prompt callback receives state
         agent_input["user_profile"] = state.get("user_profile")
         agent_input["user_context"] = state.get("user_context", {})
+        response_channel = state.get("response_channel")
+        messages = state.get("messages", []) or []
+        language = get_dominant_language(messages, default_lang="Chinese")
 
-        result = await supervisor_agent.ainvoke(agent_input, config=config)
-        return {"messages": result.get("messages", [])}
+        streamed_messages = []
+        async for chunk in supervisor_agent.astream(
+            agent_input,
+            config=config,
+            stream_mode="updates",
+        ):
+            if not isinstance(chunk, dict):
+                continue
+            for inner_node_name, inner_output in chunk.items():
+                if not isinstance(inner_output, dict):
+                    continue
+                messages = inner_output.get("messages", []) or []
+                if isinstance(messages, list) and messages:
+                    streamed_messages.extend(messages)
+                if response_channel:
+                    partial_payloads = build_thinking_partials(
+                        inner_node_name,
+                        inner_output,
+                        language=language,
+                        context_messages=messages,
+                    )
+                    for partial_payload in partial_payloads:
+                        await _redis_client.publish(
+                            response_channel,
+                            json.dumps(partial_payload, ensure_ascii=False),
+                        )
+
+        return {"messages": streamed_messages}
 
     def _should_continue(state: SupervisorState) -> Literal["unsafe", "safe"]:
         analysis = state.get("analysis", {})

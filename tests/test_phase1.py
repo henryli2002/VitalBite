@@ -17,6 +17,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 # Ensure src is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -210,6 +211,37 @@ class TestSupervisorToolsList:
         assert "analyze_food_image" in names
         assert "search_restaurants" in names
 
+    @pytest.mark.asyncio
+    async def test_recommendation_tool_guidance_preserves_full_page(self):
+        from langgraph_app.tools import recommendation_tool
+
+        fake_batch = {
+            "restaurants": [
+                {"name": "A", "address": "Addr A", "rating": 4.1, "types": ["restaurant"]},
+                {"name": "B", "address": "Addr B", "rating": 4.2, "types": ["restaurant"]},
+                {"name": "C", "address": "Addr C", "rating": 4.3, "types": ["restaurant"]},
+                {"name": "D", "address": "Addr D", "rating": 4.4, "types": ["restaurant"]},
+                {"name": "E", "address": "Addr E", "rating": 4.5, "types": ["restaurant"]},
+            ],
+            "next_page_token": None,
+        }
+
+        with patch.object(recommendation_tool, "_load_state", AsyncMock(return_value={"results": [], "next_token": None, "exhausted": False})), patch.object(
+            recommendation_tool, "_save_state", AsyncMock()
+        ), patch.object(
+            recommendation_tool.map_tool, "search_restaurants", AsyncMock(return_value=fake_batch)
+        ):
+            raw = await recommendation_tool.search_restaurants.ainvoke(
+                {"query": "restaurants", "page": 1},
+                config={"configurable": {"user_id": "u1", "user_context": {}}},
+            )
+
+        data = json.loads(raw)
+        guidance = data["display_guidance"]
+        assert len(data["restaurants"]) == 5
+        assert "Output every restaurant returned for the current page exactly once" in guidance
+        assert "Do NOT shrink it" in guidance
+
 
 # =========================================================================
 # 4. Supervisor module tests
@@ -251,6 +283,7 @@ class TestSupervisorPromptBuilder:
         content = _build_system_prompt(state)[0].content
         assert "analyze_food_image" in content
         assert "search_restaurants" in content
+        assert "must contain every restaurant returned for the current page exactly once" in content
 
 
 # =========================================================================
@@ -352,6 +385,73 @@ class TestBuildThinkingPartial:
 
         result = build_thinking_partial("unknown_node", {})
         assert result is None
+
+    def test_supervisor_streaming_builds_tool_specific_partials(self):
+        from langgraph_app.orchestrator.thinking import build_thinking_partials
+
+        mock_msg = MagicMock()
+        mock_msg.tool_calls = [
+            {"name": "analyze_food_image"},
+            {"name": "search_restaurants"},
+        ]
+        result = build_thinking_partials("agent", {"messages": [mock_msg]})
+        assert [item["node"] for item in result] == [
+            "tool_call_analyze_food_image",
+            "tool_call_search_restaurants",
+        ]
+        assert result[0]["analysis"]["title"] == "查看图片"
+        assert "我先看看图里有哪些食物" in result[0]["analysis"]["reasoning"]
+        assert result[1]["analysis"]["title"] == "搜索餐厅"
+        assert "我在根据当前位置和你的需求找更合适的餐厅" in result[1]["analysis"]["reasoning"]
+
+    def test_tool_result_uses_structured_summary(self):
+        from langgraph_app.orchestrator.thinking import build_thinking_partials
+
+        mock_msg = MagicMock()
+        mock_msg.name = "search_restaurants"
+        mock_msg.content = json.dumps(
+            {"restaurants": [{"name": "A"}, {"name": "B"}]}, ensure_ascii=False
+        )
+        result = build_thinking_partials("tools", {"messages": [mock_msg]})
+        assert len(result) == 1
+        assert result[0]["node"] == "tool_result_search_restaurants"
+        assert result[0]["analysis"]["title"] == "候选餐厅"
+        assert "目前找到 2 家比较匹配的餐厅" in result[0]["analysis"]["reasoning"]
+
+    def test_food_result_lists_detected_items_in_chinese(self):
+        from langgraph_app.orchestrator.thinking import build_thinking_partials
+
+        mock_msg = MagicMock()
+        mock_msg.name = "analyze_food_image"
+        mock_msg.content = json.dumps(
+            {"items": [{"name": "burger"}, {"name": "fries"}]}, ensure_ascii=False
+        )
+        result = build_thinking_partials(
+            "tools",
+            {"messages": [mock_msg]},
+            context_messages=[HumanMessage(content="帮我看看这顿饭怎么样")],
+        )
+        assert len(result) == 1
+        assert result[0]["analysis"]["title"] == "识别结果"
+        assert "burger" in result[0]["analysis"]["reasoning"]
+        assert "fries" in result[0]["analysis"]["reasoning"]
+        assert "整理成更容易读的结论" in result[0]["analysis"]["reasoning"]
+
+    def test_supervisor_reply_uses_english_when_user_prefers_english(self):
+        from langgraph_app.orchestrator.thinking import build_thinking_partials
+
+        mock_msg = MagicMock()
+        mock_msg.tool_calls = None
+        mock_msg.content = "Final answer incoming"
+        result = build_thinking_partials(
+            "agent",
+            {"messages": [mock_msg]},
+            context_messages=[HumanMessage(content="Please reply in English")],
+        )
+        assert len(result) == 1
+        assert result[0]["node"] == "supervisor_reply"
+        assert result[0]["analysis"]["title"] == "Writing the reply"
+        assert "turning everything I gathered into the final reply" in result[0]["analysis"]["reasoning"]
 
 
 # =========================================================================

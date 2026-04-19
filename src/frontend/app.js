@@ -553,7 +553,7 @@ function showTypingIndicator() {
 
 function updateThinkingIndicator(data) {
     const nodeName = data.content || data.node || '';
-    const thinkingText = extractThinkingText(data, nodeName);
+    const thinkingStep = extractThinkingStep(data, nodeName);
     
     const pendingMessage = ensurePendingAssistantMessage();
     let container = pendingMessage.querySelector('.thinking-container');
@@ -563,6 +563,8 @@ function updateThinkingIndicator(data) {
     }
     
     const logs = container.querySelector('.thinking-logs');
+    const panelMeta = container.querySelector('.thinking-panel-meta');
+    const stage = container.querySelector('.thinking-stage');
 
     // --- Logic for Appending vs Replacing ---
 
@@ -574,7 +576,7 @@ function updateThinkingIndicator(data) {
 
     // For the recognition node, handle step-by-step logging.
     if (nodeName === 'recognition') {
-        const isFirstStep = thinkingText.includes('1/4');
+        const isFirstStep = thinkingStep.body.includes('1/4');
         // If this is the first step, clear any previous recognition logs from a prior run.
         if (isFirstStep) {
             const oldRecLogs = logs.querySelectorAll('li[data-stream-item^="recognition"]');
@@ -582,34 +584,52 @@ function updateThinkingIndicator(data) {
         }
         
         // Create a unique key for each step to ensure it's always appended.
-        const stepMatch = thinkingText.match(/Step (\d\/\d)/);
+        const stepMatch = thinkingStep.body.match(/Step (\d\/\d)/);
         const stepKey = stepMatch ? `recognition-step-${stepMatch[1].replace('/', '-')}` : `recognition-other-${Date.now()}`;
 
         let li = logs.querySelector(`li[data-stream-item="${stepKey}"]`);
+        let isNew = false;
         if (!li) {
             li = document.createElement('li');
             li.dataset.streamItem = stepKey;
-            li.innerHTML = thinkingText;
             logs.appendChild(li);
+            isNew = true;
         }
-        // No 'else' block, so we never overwrite an existing step.
+        li.innerHTML = buildThinkingLogMarkup(thinkingStep);
+        li.dataset.status = 'active';
+        if (isNew) {
+            li.classList.add('thinking-log-enter');
+        }
 
     } else {
         // For all other nodes (router, chitchat, etc.), replace their specific log item.
         let li = logs.querySelector(`li[data-stream-item="${nodeName || 'thinking'}"]`);
+        let isNew = false;
         if (!li) {
             li = document.createElement('li');
             li.dataset.streamItem = nodeName || 'thinking';
             logs.appendChild(li);
+            isNew = true;
         }
-        if (li.innerHTML !== thinkingText) {
-            li.innerHTML = thinkingText;
+        const markup = buildThinkingLogMarkup(thinkingStep);
+        if (li.innerHTML !== markup) {
+            li.innerHTML = markup;
+        }
+        li.dataset.status = 'active';
+        if (isNew) {
+            li.classList.add('thinking-log-enter');
         }
     }
 
+    syncThinkingLogStates(logs, nodeName === 'recognition'
+        ? logs.lastElementChild?.dataset.streamItem
+        : (nodeName || 'thinking'));
+
     // --- Update Summary and Layout ---
     const summary = container.querySelector('.thinking-summary');
-    summary.textContent = buildThinkingSummary(thinkingText);
+    summary.textContent = buildThinkingSummary(thinkingStep.body || thinkingStep.title);
+    stage.textContent = '思考中';
+    panelMeta.textContent = `已记录 ${logs.children.length} 步`;
 
     const content = container.querySelector('.thinking-content');
     if (container.classList.contains('expanded')) {
@@ -622,13 +642,24 @@ function createThinkingContainer(parentMessageEl) {
     container.className = 'thinking-container';
     container.innerHTML = `
         <button type="button" class="thinking-chip" aria-expanded="false">
-            <span class="thinking-icon">✨</span>
-            <span class="thinking-title">Thinking</span>
-            <span class="thinking-summary">...</span>
+            <span class="thinking-icon" aria-hidden="true">
+                <span class="thinking-icon-core"></span>
+            </span>
+            <span class="thinking-head">
+                <span class="thinking-title">思考过程</span>
+                <span class="thinking-summary">正在整理过程...</span>
+            </span>
+            <span class="thinking-stage">思考中</span>
             <span class="thinking-toggle">⌄</span>
         </button>
         <div class="thinking-content">
-            <ul class="thinking-logs"></ul>
+            <div class="thinking-panel">
+                <div class="thinking-panel-header">
+                    <span class="thinking-panel-title">处理步骤</span>
+                    <span class="thinking-panel-meta">等待更新</span>
+                </div>
+                <ul class="thinking-logs"></ul>
+            </div>
         </div>
     `;
     parentMessageEl.querySelector('.message-content').prepend(container);
@@ -650,7 +681,7 @@ function showThinkingPlaceholder() {
     
     container = createThinkingContainer(pendingMessage);
     const summary = container.querySelector('.thinking-summary');
-    summary.textContent = '...';
+    summary.textContent = '正在整理过程...';
 }
 
 function buildThinkingSummary(text) {
@@ -661,8 +692,14 @@ function buildThinkingSummary(text) {
     return `${combined.slice(0, maxChars - 1)}…`;
 }
 
-function extractThinkingText(data, nodeName = '') {
+function extractThinkingStep(data, nodeName = '') {
     const analysis = data.analysis || {};
+    const title = (analysis.title && typeof analysis.title === 'string')
+        ? analysis.title.trim()
+        : getThinkingTitle(nodeName);
+    const tone = (analysis.tone && typeof analysis.tone === 'string')
+        ? analysis.tone
+        : inferThinkingTone(nodeName);
     // For router, build a detailed summary string.
     if ((nodeName === 'intent_router' || nodeName === 'router') && analysis.intent && typeof analysis.intent === 'string') {
         const confidencePart = typeof analysis.confidence === 'number'
@@ -674,28 +711,95 @@ function extractThinkingText(data, nodeName = '') {
         const body = reason
             ? `${analysis.intent}${confidencePart}. ${reason}`
             : `${analysis.intent}${confidencePart}`;
-        return formatThinkingStep('Recognizing user intent', body);
+        return { title, body, tone: analysis.tone || 'intent' };
     }
-    // For all other nodes, directly use the reasoning string. This is simpler and
-    // works perfectly with the step-by-step updates from the recognition node.
     if (analysis.reasoning && typeof analysis.reasoning === 'string') {
-        return formatThinkingStep('Log', analysis.reasoning.trim());
+        return { title, body: analysis.reasoning.trim(), tone };
     }
-    // Fallbacks for unusual analysis structures.
-    if (typeof analysis === 'string' && analysis.trim()) return escapeHtml(analysis.trim());
+    if (typeof analysis === 'string' && analysis.trim()) {
+        return { title, body: analysis.trim(), tone };
+    }
     const kv = Object.entries(analysis).filter(([, value]) => (
         typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
     ));
     if (kv.length) {
-        return escapeHtml(kv.map(([key, value]) => `${key}: ${String(value)}`).join(' | '));
+        return {
+            title,
+            body: kv.map(([key, value]) => `${key}: ${String(value)}`).join(' | '),
+            tone,
+        };
     }
-    return '...';
+    return { title, body: '...', tone: 'neutral' };
 }
 
-function formatThinkingStep(title, body) {
-    const safeTitle = escapeHtml(title);
-    const safeBody = escapeHtml(body || '');
-    return `<span class="thinking-step-title">${safeTitle}:</span><br/><span class="thinking-step-body">${safeBody}</span>`;
+function getThinkingTitle(nodeName = '') {
+    if (nodeName === 'intent_router' || nodeName === 'router') return 'Intent';
+    if (nodeName.includes('tool_call_analyze_food_image')) return 'Analyzing image';
+    if (nodeName.includes('tool_result_analyze_food_image')) return 'Recognition result';
+    if (nodeName.includes('tool_call_search_restaurants')) return 'Searching places';
+    if (nodeName.includes('tool_result_search_restaurants')) return 'Restaurant results';
+    if (nodeName === 'supervisor_reply') return 'Writing response';
+    if (nodeName === 'chitchat') return 'Drafting reply';
+    if (nodeName === 'recognition') return 'Recognition step';
+    if (nodeName === 'recommendation') return 'Recommendations';
+    return 'Live update';
+}
+
+function inferThinkingTone(nodeName = '') {
+    if (nodeName.includes('tool_call')) return 'active';
+    if (nodeName.includes('tool_result')) return 'success';
+    if (nodeName === 'intent_router' || nodeName === 'router') return 'intent';
+    if (nodeName === 'supervisor_reply' || nodeName === 'chitchat') return 'compose';
+    return 'neutral';
+}
+
+function buildThinkingLogMarkup(step) {
+    const safeTitle = escapeHtml(step.title || 'Live update');
+    const safeBody = escapeHtml(step.body || '...');
+    return `
+        <div class="thinking-log-rail" aria-hidden="true"></div>
+        <div class="thinking-log-main">
+            <div class="thinking-log-top">
+                <span class="thinking-log-title">${safeTitle}</span>
+                <span class="thinking-log-badge thinking-log-badge-${escapeHtml(step.tone || 'neutral')}">Active</span>
+            </div>
+            <div class="thinking-log-body">${safeBody}</div>
+        </div>
+    `;
+}
+
+function removeTrailingComposeLog(logs) {
+    if (!logs) return;
+    const composeKeys = ['supervisor_reply', 'chitchat'];
+    const items = Array.from(logs.querySelectorAll('li'));
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+        const key = items[i].dataset.streamItem || '';
+        if (composeKeys.includes(key)) {
+            items[i].remove();
+            return;
+        }
+        if (items[i].dataset.status === 'active') {
+            break;
+        }
+    }
+}
+
+function syncThinkingLogStates(logs, activeKey) {
+    const items = Array.from(logs.querySelectorAll('li'));
+    items.forEach((li) => {
+        const badge = li.querySelector('.thinking-log-badge');
+        li.classList.remove('is-active', 'is-complete');
+        li.classList.remove('thinking-log-enter');
+        if (li.dataset.streamItem === activeKey) {
+            li.classList.add('is-active');
+            li.dataset.status = 'active';
+            if (badge) badge.textContent = '进行中';
+        } else {
+            li.classList.add('is-complete');
+            li.dataset.status = 'complete';
+            if (badge) badge.textContent = '完成';
+        }
+    });
 }
 
 function finalizeThinkingContainer(messageEl) {
@@ -703,12 +807,21 @@ function finalizeThinkingContainer(messageEl) {
     if (!container) return;
     const chip = container.querySelector('.thinking-chip');
     const title = container.querySelector('.thinking-title');
-    const summary = container.querySelector('.thinking-summary');
+    const stage = container.querySelector('.thinking-stage');
+    const panelMeta = container.querySelector('.thinking-panel-meta');
     const content = container.querySelector('.thinking-content');
+    const logs = container.querySelector('.thinking-logs');
+    removeTrailingComposeLog(logs);
     container.classList.remove('expanded');
+    container.classList.add('is-finished');
     chip.setAttribute('aria-expanded', 'false');
-    title.textContent = 'Show thinking';
-    summary.textContent = '';
+    title.textContent = '思考过程';
+    stage.textContent = '已完成';
+    panelMeta.textContent = `共完成 ${logs.children.length} 步`;
+    syncThinkingLogStates(logs, null);
+    const summary = container.querySelector('.thinking-summary');
+    const lastLogBody = logs.lastElementChild?.querySelector('.thinking-log-body')?.textContent?.trim();
+    summary.textContent = lastLogBody || '已完成';
     content.style.maxHeight = '0px';
 }
 

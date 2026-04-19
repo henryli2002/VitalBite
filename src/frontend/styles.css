@@ -993,60 +993,119 @@ html, body {
 
 /* Thinking Process Indicator */
 .thinking-container {
-    margin-top: 2px;
-    margin-bottom: 12px;
-    animation: messageIn 0.3s ease;
+    margin-top: 4px;
+    margin-bottom: 10px;
+    animation: fadeInUp 0.32s ease;
+    opacity: 0.88;
 }
 
 .thinking-chip {
     display: flex;
     align-items: center;
-    gap: 8px;
-    width: fit-content;
-    max-width: 100%;
-    border: 1px solid var(--border);
-    border-radius: var(--r-full);
-    background: rgba(253, 246, 227, 0.8);
+    gap: 12px;
+    width: 100%;
+    max-width: min(100%, 540px);
+    border: 1px solid rgba(38, 139, 210, 0.08);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(249, 246, 238, 0.82));
     color: var(--text-2);
-    padding: 6px 10px;
+    padding: 8px 11px;
     cursor: pointer;
-    transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
-    box-shadow: var(--shadow-xs);
+    transition:
+        transform 180ms ease,
+        box-shadow 220ms ease,
+        background 220ms ease,
+        border-color 220ms ease;
+    box-shadow:
+        0 6px 16px rgba(7, 54, 66, 0.035),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
     font: inherit;
+    text-align: left;
+    position: relative;
+    overflow: hidden;
 }
 
 .thinking-chip:hover {
     transform: translateY(-1px);
-    background: rgba(253, 246, 227, 0.95);
-    box-shadow: var(--shadow-sm);
+    border-color: rgba(38, 139, 210, 0.14);
+    box-shadow:
+        0 10px 22px rgba(7, 54, 66, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .thinking-icon {
-    font-size: 13px;
-    color: var(--sol-yellow);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 35% 35%, rgba(255,255,255,0.95), rgba(255,255,255,0.18) 32%, transparent 33%),
+        linear-gradient(145deg, rgba(38, 139, 210, 0.78), rgba(42, 161, 152, 0.76));
+    box-shadow:
+        0 0 0 4px rgba(38, 139, 210, 0.045),
+        0 4px 10px rgba(38, 139, 210, 0.12);
+    position: relative;
+    flex-shrink: 0;
+}
+
+.thinking-icon::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid rgba(38, 139, 210, 0.1);
+    animation: thinkingPulse 2.2s ease-out infinite;
+}
+
+.thinking-icon-core {
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.9);
+}
+
+.thinking-head {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
 }
 
 .thinking-title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-2);
-    white-space: nowrap;
+    letter-spacing: 0.04em;
+    color: rgba(7, 54, 66, 0.52);
 }
 
 .thinking-summary {
     font-size: 12px;
-    color: var(--text-3);
+    color: rgba(7, 54, 66, 0.78);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
 }
 
 .thinking-toggle {
     font-size: 13px;
-    margin-left: 2px;
     color: var(--text-3);
     transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    flex-shrink: 0;
+}
+
+.thinking-stage {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    padding: 4px 8px;
+    border-radius: var(--r-full);
+    background: rgba(147, 161, 161, 0.11);
+    color: rgba(88, 110, 117, 0.84);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
 }
 
 .thinking-container.expanded .thinking-toggle {
@@ -1056,54 +1115,197 @@ html, body {
 .thinking-content {
     max-height: 0px;
     overflow: hidden;
-    transition: max-height 0.3s cubic-bezier(0.32, 0.72, 0, 1), margin-top 0.3s ease;
+    transition: max-height 0.34s cubic-bezier(0.32, 0.72, 0, 1), margin-top 0.3s ease;
     margin-top: 0;
 }
 
 .thinking-container.expanded .thinking-content {
-    margin-top: 8px;
+    margin-top: 7px;
 }
 
-.thinking-node + .thinking-node {
-    margin-top: 8px;
+.thinking-panel {
+    width: min(100%, 540px);
+    padding: 12px 12px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(38, 139, 210, 0.08);
+    background: linear-gradient(180deg, rgba(255,255,255,0.74), rgba(252,249,243,0.76));
+    box-shadow:
+        0 10px 24px rgba(7, 54, 66, 0.04),
+        inset 0 1px 0 rgba(255,255,255,0.7);
 }
 
-.thinking-node-title {
+.thinking-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.thinking-panel-title {
     font-size: 11px;
-    color: var(--text-3);
-    margin-bottom: 4px;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    color: rgba(7, 54, 66, 0.58);
+}
+
+.thinking-panel-meta {
+    font-size: 11px;
+    color: rgba(88, 110, 117, 0.72);
 }
 
 .thinking-logs {
     list-style-type: none;
-    padding: 8px 10px 8px 12px;
+    padding: 0;
     margin: 0;
-    font-size: 12px;
-    color: var(--text-2);
-    font-style: italic;
-    line-height: 1.45;
-    background: rgba(7, 54, 66, 0.03);
-    border-radius: var(--r-sm);
-    border-left: 2px solid var(--sol-yellow);
 }
 
 .thinking-logs li + li {
-    margin-top: 6px;
+    margin-top: 10px;
 }
 
-.thinking-step-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-1);
-    font-style: normal;
+.thinking-logs li {
+    position: relative;
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 0;
 }
 
-.thinking-step-body {
+.thinking-log-enter {
+    animation: fadeInUp 0.22s ease;
+}
+
+.thinking-log-rail {
+    width: 14px;
+    position: relative;
+    min-height: 100%;
+}
+
+.thinking-log-rail::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--sol-blue), var(--sol-cyan));
+    box-shadow: 0 0 0 4px rgba(38, 139, 210, 0.1);
+}
+
+.thinking-log-rail::after {
+    content: "";
+    position: absolute;
+    top: 24px;
+    bottom: -18px;
+    left: 6px;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(38, 139, 210, 0.28), rgba(38, 139, 210, 0.04));
+}
+
+.thinking-logs li:last-child .thinking-log-rail::after {
+    display: none;
+}
+
+.thinking-log-main {
+    padding: 10px 11px 11px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.46);
+    border: 1px solid rgba(38, 139, 210, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.75);
+}
+
+.thinking-log-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.thinking-log-title {
     font-size: 12px;
-    font-style: italic;
+    font-weight: 600;
+    color: rgba(7, 54, 66, 0.86);
+}
+
+.thinking-log-body {
+    font-size: 12px;
+    line-height: 1.55;
+    color: rgba(88, 110, 117, 0.92);
+}
+
+.thinking-log-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    border-radius: var(--r-full);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+}
+
+.thinking-log-badge-active {
+    background: rgba(38, 139, 210, 0.1);
+    color: var(--sol-blue);
+}
+
+.thinking-log-badge-success {
+    background: rgba(133, 153, 0, 0.1);
+    color: var(--sol-green);
+}
+
+.thinking-log-badge-intent {
+    background: rgba(108, 113, 196, 0.12);
+    color: var(--sol-violet);
+}
+
+.thinking-log-badge-compose {
+    background: rgba(42, 161, 152, 0.12);
+    color: var(--sol-cyan);
+}
+
+.thinking-log-badge-neutral {
+    background: rgba(147, 161, 161, 0.14);
     color: var(--text-2);
+}
+
+.thinking-logs li.is-active .thinking-log-main {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.76), rgba(247, 251, 252, 0.78));
+    border-color: rgba(38, 139, 210, 0.14);
+    box-shadow:
+        0 6px 14px rgba(38, 139, 210, 0.05),
+        inset 0 1px 0 rgba(255,255,255,0.88);
+}
+
+.thinking-logs li.is-active .thinking-log-rail::before {
+    animation: thinkingPulseDot 1.8s ease-out infinite;
+}
+
+.thinking-logs li.is-complete .thinking-log-main {
+    background: rgba(255,255,255,0.42);
+}
+
+.thinking-logs li.is-complete .thinking-log-title {
+    color: rgba(7, 54, 66, 0.84);
+}
+
+.thinking-logs li.is-complete .thinking-log-body {
+    color: var(--text-2);
+}
+
+.thinking-container.is-finished .thinking-stage {
+    background: rgba(133, 153, 0, 0.1);
+    color: rgba(88, 110, 117, 0.84);
+}
+
+.thinking-container.is-finished {
+    opacity: 0.76;
 }
 
 .typing-dot {
@@ -1467,6 +1669,55 @@ html, body {
 @keyframes scaleIn { from { opacity: 0; transform: scale(0.96) } to { opacity: 1; transform: scale(1) } }
 @keyframes messageIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
 @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0) } 30% { transform: translateY(-4px) } }
+@keyframes thinkingPulse {
+    0% { transform: scale(0.92); opacity: 0.75; }
+    70% { transform: scale(1.12); opacity: 0; }
+    100% { transform: scale(1.12); opacity: 0; }
+}
+@keyframes thinkingPulseDot {
+    0% { box-shadow: 0 0 0 0 rgba(38, 139, 210, 0.22); }
+    70% { box-shadow: 0 0 0 8px rgba(38, 139, 210, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(38, 139, 210, 0); }
+}
+
+@media (max-width: 768px) {
+    .thinking-chip,
+    .thinking-panel {
+        max-width: 100%;
+    }
+
+    .thinking-chip {
+        padding: 10px 11px;
+        gap: 10px;
+    }
+
+    .thinking-stage {
+        min-width: 44px;
+        padding: 4px 7px;
+    }
+
+    .thinking-log-top {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .thinking-summary {
+        font-size: 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .thinking-container,
+    .thinking-chip,
+    .thinking-content,
+    .thinking-log-enter,
+    .thinking-icon::after,
+    .thinking-logs li.is-active .thinking-log-rail::before {
+        animation: none !important;
+        transition: none !important;
+    }
+}
 
 /* ===================================================================
    Responsive

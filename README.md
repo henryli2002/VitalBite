@@ -52,7 +52,7 @@ wabi-ai (LangGraph Worker · 端口 8001)
 - 系统提示注入：用户档案、长期画像、当前时间/餐次、每日热量参考、语言
 - `MAX_TOOL_CALLS_PER_TURN` 限流；Tool 失败返回 `{"error": ...}` 由 Supervisor 决策降级
 - `user_id`/`user_context` 通过 `RunnableConfig.configurable` 隐式传递，不污染 Tool 签名
-- 流式 thinking：每次 Tool 调用前后 Pub/Sub 推送状态给前端
+- 流式 thinking：Supervisor 内部 react loop 会在 Tool 调用前后推送细粒度状态给前端，例如“正在识别图片...”→“识别完成，发现 3 道食物。”→“正在搜索餐厅...”→“生成回复中...”
 
 ---
 
