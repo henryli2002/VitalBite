@@ -317,8 +317,19 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
                 continue
 
             crop_img = img.crop((crop_xmin, crop_ymin, crop_xmax, crop_ymax))
+            crop_w, crop_h = crop_img.size
+
+            # Letterbox: fill with white background to make it square
+            max_edge = max(crop_w, crop_h)
+            square_img = Image.new("RGB", (max_edge, max_edge), (255, 255, 255))
+
+            # Center paste
+            offset_x = (max_edge - crop_w) // 2
+            offset_y = (max_edge - crop_h) // 2
+            square_img.paste(crop_img, (offset_x, offset_y))
+
             buf = io.BytesIO()
-            crop_img.save(buf, format="JPEG")
+            square_img.save(buf, format="JPEG")
 
             try:
                 res = predict_nutrition(buf.getvalue())

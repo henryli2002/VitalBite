@@ -1095,12 +1095,20 @@ const MACRO_COLORS = {
  * the browser's local time (respects the user's actual timezone).
  */
 function getCurrentMealType(isZh = true) {
-    const localHours = new Date().getHours();
-    if (localHours >= 5 && localHours < 11) {
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const t = hour * 60 + minute; // minutes since midnight
+
+    // Align with backend detect_meal_time logic:
+    // Breakfast: 7:00 - 9:30 (420 - 570)
+    // Lunch: 11:30 - 13:30 (690 - 810)
+    // Dinner: 17:30 - 19:30 (1050 - 1170)
+    if (t >= 420 && t <= 570) {
         return isZh ? '早餐' : 'Breakfast';
-    } else if (localHours >= 11 && localHours < 17) {
+    } else if (t >= 690 && t <= 810) {
         return isZh ? '午餐' : 'Lunch';
-    } else if (localHours >= 17 && localHours < 22) {
+    } else if (t >= 1050 && t <= 1170) {
         return isZh ? '晚餐' : 'Dinner';
     } else {
         return isZh ? '加餐' : 'Snack';
