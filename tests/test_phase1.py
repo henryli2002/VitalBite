@@ -399,6 +399,7 @@ class TestBuildThinkingPartial:
             "tool_call_analyze_food_image",
             "tool_call_search_restaurants",
         ]
+        assert result[0]["analysis"]["language"] == "Chinese"
         assert result[0]["analysis"]["title"] == "查看图片"
         assert "我先看看图里有哪些食物" in result[0]["analysis"]["reasoning"]
         assert result[1]["analysis"]["title"] == "搜索餐厅"
@@ -450,6 +451,7 @@ class TestBuildThinkingPartial:
         )
         assert len(result) == 1
         assert result[0]["node"] == "supervisor_reply"
+        assert result[0]["analysis"]["language"] == "English"
         assert result[0]["analysis"]["title"] == "Writing the reply"
         assert "turning everything I gathered into the final reply" in result[0]["analysis"]["reasoning"]
 

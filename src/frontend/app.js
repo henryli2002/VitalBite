@@ -15,7 +15,110 @@ const state = {
     userLocation: { lat: null, lng: null }, // Cached user geolocation
     userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
     pendingAssistantMessageEl: null,
+    uiLanguage: 'Chinese',
 };
+
+const UI_COPY = {
+    Chinese: {
+        thinkingTitle: '思考过程',
+        thinkingSummaryPending: '正在整理过程...',
+        thinkingStageLive: '思考中',
+        thinkingStageDone: '已完成',
+        thinkingPanelTitle: '处理步骤',
+        thinkingPanelWaiting: '等待更新',
+        thinkingStepsCaptured: (n) => `已记录 ${n} 步`,
+        thinkingStepsDone: (n) => `共完成 ${n} 步`,
+        badgeActive: '进行中',
+        badgeDone: '完成',
+        fallbackDone: '已完成',
+        fallbackLiveUpdate: '过程更新',
+        titleIntent: '理解需求',
+        titleAnalyzeImage: '查看图片',
+        titleRecognitionResult: '识别结果',
+        titleSearchRestaurants: '搜索餐厅',
+        titleRestaurantResults: '候选餐厅',
+        titleWritingResponse: '组织回答',
+        titleDraftingReply: '组织回答',
+        titleRecognitionStep: '识别步骤',
+        titleRecommendations: '推荐结果',
+    },
+    English: {
+        thinkingTitle: 'Reasoning',
+        thinkingSummaryPending: 'Preparing the reasoning steps...',
+        thinkingStageLive: 'Thinking',
+        thinkingStageDone: 'Done',
+        thinkingPanelTitle: 'Steps',
+        thinkingPanelWaiting: 'Waiting for updates',
+        thinkingStepsCaptured: (n) => `${n} step${n === 1 ? '' : 's'} captured`,
+        thinkingStepsDone: (n) => `${n} step${n === 1 ? '' : 's'} completed`,
+        badgeActive: 'Active',
+        badgeDone: 'Done',
+        fallbackDone: 'Done',
+        fallbackLiveUpdate: 'Live update',
+        titleIntent: 'Intent',
+        titleAnalyzeImage: 'Checking the image',
+        titleRecognitionResult: 'Recognition result',
+        titleSearchRestaurants: 'Searching restaurants',
+        titleRestaurantResults: 'Restaurant candidates',
+        titleWritingResponse: 'Writing the reply',
+        titleDraftingReply: 'Drafting the reply',
+        titleRecognitionStep: 'Recognition step',
+        titleRecommendations: 'Recommendations',
+    },
+};
+
+function getUILanguage(override) {
+    if (override === 'English' || override === 'Chinese') return override;
+    return state.uiLanguage === 'English' ? 'English' : 'Chinese';
+}
+
+function t(key, overrideLanguage) {
+    const lang = getUILanguage(overrideLanguage);
+    return UI_COPY[lang][key] ?? UI_COPY.Chinese[key] ?? key;
+}
+
+function getContainerLanguage(container) {
+    return getUILanguage(container?.dataset?.uiLanguage);
+}
+
+function setContainerLanguage(container, language) {
+    const resolved = getUILanguage(language);
+    if (container) {
+        container.dataset.uiLanguage = resolved;
+    }
+    return resolved;
+}
+
+function refreshThinkingContainerCopy(container) {
+    if (!container) return;
+    const lang = getContainerLanguage(container);
+    const title = container.querySelector('.thinking-title');
+    const stage = container.querySelector('.thinking-stage');
+    const panelTitle = container.querySelector('.thinking-panel-title');
+    const panelMeta = container.querySelector('.thinking-panel-meta');
+    const summary = container.querySelector('.thinking-summary');
+
+    if (title) title.textContent = t('thinkingTitle', lang);
+    if (stage && !container.classList.contains('is-finished')) {
+        stage.textContent = t('thinkingStageLive', lang);
+    }
+    if (panelTitle) panelTitle.textContent = t('thinkingPanelTitle', lang);
+    if (panelMeta && !panelMeta.textContent.trim()) {
+        panelMeta.textContent = t('thinkingPanelWaiting', lang);
+    }
+    if (summary && !summary.textContent.trim()) {
+        summary.textContent = t('thinkingSummaryPending', lang);
+    }
+
+    const badges = container.querySelectorAll('.thinking-log-badge');
+    badges.forEach((badge) => {
+        const li = badge.closest('li');
+        if (!li) return;
+        badge.textContent = li.dataset.status === 'active'
+            ? t('badgeActive', lang)
+            : t('badgeDone', lang);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // DOM Refs
@@ -553,7 +656,8 @@ function showTypingIndicator() {
 
 function updateThinkingIndicator(data) {
     const nodeName = data.content || data.node || '';
-    const thinkingStep = extractThinkingStep(data, nodeName);
+    const incomingLanguage = getUILanguage(data.analysis?.language);
+    state.uiLanguage = incomingLanguage;
     
     const pendingMessage = ensurePendingAssistantMessage();
     let container = pendingMessage.querySelector('.thinking-container');
@@ -561,6 +665,9 @@ function updateThinkingIndicator(data) {
     if (!container) {
         container = createThinkingContainer(pendingMessage);
     }
+    const containerLanguage = setContainerLanguage(container, incomingLanguage);
+    refreshThinkingContainerCopy(container);
+    const thinkingStep = extractThinkingStep(data, nodeName, containerLanguage);
     
     const logs = container.querySelector('.thinking-logs');
     const panelMeta = container.querySelector('.thinking-panel-meta');
@@ -628,8 +735,8 @@ function updateThinkingIndicator(data) {
     // --- Update Summary and Layout ---
     const summary = container.querySelector('.thinking-summary');
     summary.textContent = buildThinkingSummary(thinkingStep.body || thinkingStep.title);
-    stage.textContent = '思考中';
-    panelMeta.textContent = `已记录 ${logs.children.length} 步`;
+    stage.textContent = t('thinkingStageLive', containerLanguage);
+    panelMeta.textContent = t('thinkingStepsCaptured', containerLanguage)(logs.children.length);
 
     const content = container.querySelector('.thinking-content');
     if (container.classList.contains('expanded')) {
@@ -640,23 +747,24 @@ function updateThinkingIndicator(data) {
 function createThinkingContainer(parentMessageEl) {
     const container = document.createElement('div');
     container.className = 'thinking-container';
+    const lang = setContainerLanguage(container, getUILanguage());
     container.innerHTML = `
         <button type="button" class="thinking-chip" aria-expanded="false">
             <span class="thinking-icon" aria-hidden="true">
                 <span class="thinking-icon-core"></span>
             </span>
             <span class="thinking-head">
-                <span class="thinking-title">思考过程</span>
-                <span class="thinking-summary">正在整理过程...</span>
+                <span class="thinking-title">${escapeHtml(t('thinkingTitle', lang))}</span>
+                <span class="thinking-summary">${escapeHtml(t('thinkingSummaryPending', lang))}</span>
             </span>
-            <span class="thinking-stage">思考中</span>
+            <span class="thinking-stage">${escapeHtml(t('thinkingStageLive', lang))}</span>
             <span class="thinking-toggle">⌄</span>
         </button>
         <div class="thinking-content">
             <div class="thinking-panel">
                 <div class="thinking-panel-header">
-                    <span class="thinking-panel-title">处理步骤</span>
-                    <span class="thinking-panel-meta">等待更新</span>
+                    <span class="thinking-panel-title">${escapeHtml(t('thinkingPanelTitle', lang))}</span>
+                    <span class="thinking-panel-meta">${escapeHtml(t('thinkingPanelWaiting', lang))}</span>
                 </div>
                 <ul class="thinking-logs"></ul>
             </div>
@@ -681,7 +789,7 @@ function showThinkingPlaceholder() {
     
     container = createThinkingContainer(pendingMessage);
     const summary = container.querySelector('.thinking-summary');
-    summary.textContent = '正在整理过程...';
+    summary.textContent = t('thinkingSummaryPending', getContainerLanguage(container));
 }
 
 function buildThinkingSummary(text) {
@@ -692,11 +800,12 @@ function buildThinkingSummary(text) {
     return `${combined.slice(0, maxChars - 1)}…`;
 }
 
-function extractThinkingStep(data, nodeName = '') {
+function extractThinkingStep(data, nodeName = '', languageOverride = null) {
     const analysis = data.analysis || {};
+    const language = getUILanguage(analysis.language || languageOverride);
     const title = (analysis.title && typeof analysis.title === 'string')
         ? analysis.title.trim()
-        : getThinkingTitle(nodeName);
+        : getThinkingTitle(nodeName, language);
     const tone = (analysis.tone && typeof analysis.tone === 'string')
         ? analysis.tone
         : inferThinkingTone(nodeName);
@@ -711,13 +820,13 @@ function extractThinkingStep(data, nodeName = '') {
         const body = reason
             ? `${analysis.intent}${confidencePart}. ${reason}`
             : `${analysis.intent}${confidencePart}`;
-        return { title, body, tone: analysis.tone || 'intent' };
+        return { title, body, tone: analysis.tone || 'intent', language };
     }
     if (analysis.reasoning && typeof analysis.reasoning === 'string') {
-        return { title, body: analysis.reasoning.trim(), tone };
+        return { title, body: analysis.reasoning.trim(), tone, language };
     }
     if (typeof analysis === 'string' && analysis.trim()) {
-        return { title, body: analysis.trim(), tone };
+        return { title, body: analysis.trim(), tone, language };
     }
     const kv = Object.entries(analysis).filter(([, value]) => (
         typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
@@ -727,22 +836,23 @@ function extractThinkingStep(data, nodeName = '') {
             title,
             body: kv.map(([key, value]) => `${key}: ${String(value)}`).join(' | '),
             tone,
+            language,
         };
     }
-    return { title, body: '...', tone: 'neutral' };
+    return { title, body: '...', tone: 'neutral', language };
 }
 
-function getThinkingTitle(nodeName = '') {
-    if (nodeName === 'intent_router' || nodeName === 'router') return 'Intent';
-    if (nodeName.includes('tool_call_analyze_food_image')) return 'Analyzing image';
-    if (nodeName.includes('tool_result_analyze_food_image')) return 'Recognition result';
-    if (nodeName.includes('tool_call_search_restaurants')) return 'Searching places';
-    if (nodeName.includes('tool_result_search_restaurants')) return 'Restaurant results';
-    if (nodeName === 'supervisor_reply') return 'Writing response';
-    if (nodeName === 'chitchat') return 'Drafting reply';
-    if (nodeName === 'recognition') return 'Recognition step';
-    if (nodeName === 'recommendation') return 'Recommendations';
-    return 'Live update';
+function getThinkingTitle(nodeName = '', languageOverride = null) {
+    if (nodeName === 'intent_router' || nodeName === 'router') return t('titleIntent', languageOverride);
+    if (nodeName.includes('tool_call_analyze_food_image')) return t('titleAnalyzeImage', languageOverride);
+    if (nodeName.includes('tool_result_analyze_food_image')) return t('titleRecognitionResult', languageOverride);
+    if (nodeName.includes('tool_call_search_restaurants')) return t('titleSearchRestaurants', languageOverride);
+    if (nodeName.includes('tool_result_search_restaurants')) return t('titleRestaurantResults', languageOverride);
+    if (nodeName === 'supervisor_reply') return t('titleWritingResponse', languageOverride);
+    if (nodeName === 'chitchat') return t('titleDraftingReply', languageOverride);
+    if (nodeName === 'recognition') return t('titleRecognitionStep', languageOverride);
+    if (nodeName === 'recommendation') return t('titleRecommendations', languageOverride);
+    return t('fallbackLiveUpdate', languageOverride);
 }
 
 function inferThinkingTone(nodeName = '') {
@@ -756,12 +866,13 @@ function inferThinkingTone(nodeName = '') {
 function buildThinkingLogMarkup(step) {
     const safeTitle = escapeHtml(step.title || 'Live update');
     const safeBody = escapeHtml(step.body || '...');
+    const lang = getUILanguage(step.language);
     return `
         <div class="thinking-log-rail" aria-hidden="true"></div>
         <div class="thinking-log-main">
             <div class="thinking-log-top">
                 <span class="thinking-log-title">${safeTitle}</span>
-                <span class="thinking-log-badge thinking-log-badge-${escapeHtml(step.tone || 'neutral')}">Active</span>
+                <span class="thinking-log-badge thinking-log-badge-${escapeHtml(step.tone || 'neutral')}">${escapeHtml(t('badgeActive', lang))}</span>
             </div>
             <div class="thinking-log-body">${safeBody}</div>
         </div>
@@ -785,6 +896,8 @@ function removeTrailingComposeLog(logs) {
 }
 
 function syncThinkingLogStates(logs, activeKey) {
+    const container = logs.closest('.thinking-container');
+    const lang = getContainerLanguage(container);
     const items = Array.from(logs.querySelectorAll('li'));
     items.forEach((li) => {
         const badge = li.querySelector('.thinking-log-badge');
@@ -793,11 +906,11 @@ function syncThinkingLogStates(logs, activeKey) {
         if (li.dataset.streamItem === activeKey) {
             li.classList.add('is-active');
             li.dataset.status = 'active';
-            if (badge) badge.textContent = '进行中';
+            if (badge) badge.textContent = t('badgeActive', lang);
         } else {
             li.classList.add('is-complete');
             li.dataset.status = 'complete';
-            if (badge) badge.textContent = '完成';
+            if (badge) badge.textContent = t('badgeDone', lang);
         }
     });
 }
@@ -815,13 +928,14 @@ function finalizeThinkingContainer(messageEl) {
     container.classList.remove('expanded');
     container.classList.add('is-finished');
     chip.setAttribute('aria-expanded', 'false');
-    title.textContent = '思考过程';
-    stage.textContent = '已完成';
-    panelMeta.textContent = `共完成 ${logs.children.length} 步`;
+    const lang = getContainerLanguage(container);
+    title.textContent = t('thinkingTitle', lang);
+    stage.textContent = t('thinkingStageDone', lang);
+    panelMeta.textContent = t('thinkingStepsDone', lang)(logs.children.length);
     syncThinkingLogStates(logs, null);
     const summary = container.querySelector('.thinking-summary');
     const lastLogBody = logs.lastElementChild?.querySelector('.thinking-log-body')?.textContent?.trim();
-    summary.textContent = lastLogBody || '已完成';
+    summary.textContent = lastLogBody || t('fallbackDone', lang);
     content.style.maxHeight = '0px';
 }
 

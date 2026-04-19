@@ -56,6 +56,7 @@ def _make_partial(
     title: str,
     reasoning: str,
     tone: str,
+    language: str,
 ) -> Dict[str, Any]:
     return {
         "status": "partial",
@@ -64,6 +65,7 @@ def _make_partial(
             "title": title,
             "reasoning": reasoning,
             "tone": tone,
+            "language": language,
         },
     }
 
@@ -141,6 +143,7 @@ def _tool_call_partial(tool_name: str, language: str) -> Dict[str, Any]:
         title=title_map.get(tool_name, fallback_title),
         reasoning=reasoning_map.get(tool_name, fallback_reasoning),
         tone="active",
+        language=language,
     )
 
 
@@ -158,6 +161,7 @@ def _tool_result_partial(tool_name: str, content: str, language: str) -> Dict[st
             title=title,
             reasoning=reasoning,
             tone="neutral",
+            language=language,
         )
 
     if tool_name == "analyze_food_image":
@@ -218,6 +222,7 @@ def _tool_result_partial(tool_name: str, content: str, language: str) -> Dict[st
         title=title,
         reasoning=reasoning,
         tone="success",
+        language=language,
     )
 
 
@@ -260,6 +265,7 @@ def build_thinking_partials(
                     title="组织回答" if resolved_language == "Chinese" else "Writing the reply",
                     reasoning=reasoning,
                     tone="compose",
+                    language=resolved_language,
                 )
             ]
         return []
@@ -281,7 +287,9 @@ def build_thinking_partials(
     if node_name in ("router", "intent_router"):
         analysis = node_output.get("analysis")
         if analysis:
-            return [{"status": "partial", "node": "intent_router", "analysis": analysis}]
+            enriched = dict(analysis)
+            enriched.setdefault("language", resolved_language)
+            return [{"status": "partial", "node": "intent_router", "analysis": enriched}]
         return []
 
     if node_name == "chitchat":
@@ -295,7 +303,10 @@ def build_thinking_partials(
                 {
                     "status": "partial",
                     "node": "chitchat",
-                    "analysis": {"reasoning": f"Answering: {str(answer)[:180]}"},
+                    "analysis": {
+                        "reasoning": f"Answering: {str(answer)[:180]}",
+                        "language": resolved_language,
+                    },
                 }
             ]
         return []
@@ -314,7 +325,8 @@ def build_thinking_partials(
                 "status": "partial",
                 "node": "recommendation",
                 "analysis": {
-                    "reasoning": f"Finding restaurants: Found restaurants: {', '.join(names)}"
+                    "reasoning": f"Finding restaurants: Found restaurants: {', '.join(names)}",
+                    "language": resolved_language,
                 },
             }
         ]
