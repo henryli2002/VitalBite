@@ -129,6 +129,9 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 const dom = {
     sidebar: $('#sidebar'),
+    sidebarResizer: $('#sidebar-resizer'),
+    btnToggleSidebar: $('#btn-toggle-sidebar'),
+    btnExpandSidebar: $('#btn-expand-sidebar'),
     userList: $('#user-list'),
     emptyState: $('#empty-state'),
     welcomeScreen: $('#welcome-screen'),
@@ -465,7 +468,71 @@ async function sendMessage() {
 }
 
 // ---------------------------------------------------------------------------
-// Image Handling
+// Sidebar Resizing and Toggling Logic
+// ---------------------------------------------------------------------------
+
+let isResizing = false;
+let currentSidebarWidth = 340; // Default max width
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 340;
+
+function toggleSidebar() {
+    if (dom.sidebar.classList.contains('sidebar-collapsed')) {
+        // Expand
+        dom.sidebar.classList.remove('sidebar-collapsed');
+        dom.sidebar.style.width = `${currentSidebarWidth}px`;
+        dom.btnExpandSidebar.classList.remove('visible');
+    } else {
+        // Collapse
+        dom.sidebar.classList.add('sidebar-collapsed');
+        dom.sidebar.style.width = '0px';
+        dom.btnExpandSidebar.classList.add('visible');
+    }
+}
+
+// Event Listeners for Toggle Buttons
+dom.btnToggleSidebar.addEventListener('click', toggleSidebar);
+dom.btnExpandSidebar.addEventListener('click', toggleSidebar);
+
+// Resizer Event Listeners
+dom.sidebarResizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    dom.sidebar.classList.add('is-resizing');
+    document.body.style.cursor = 'col-resize';
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    // Prevent text selection while dragging
+    e.preventDefault();
+
+    let newWidth = e.clientX;
+
+    if (newWidth > MAX_SIDEBAR_WIDTH) {
+        newWidth = MAX_SIDEBAR_WIDTH;
+    }
+
+    if (newWidth < MIN_SIDEBAR_WIDTH) {
+        newWidth = MIN_SIDEBAR_WIDTH; // Enforce minimum width without collapsing
+    }
+
+    // Apply new width
+    currentSidebarWidth = newWidth;
+    dom.sidebar.style.width = `${newWidth}px`;
+});
+
+document.addEventListener('mouseup', () => {
+    if (isResizing) {
+        isResizing = false;
+        dom.sidebar.classList.remove('is-resizing');
+        document.body.style.cursor = '';
+    }
+});
+
+
+// ---------------------------------------------------------------------------
+// Init & Loading
 // ---------------------------------------------------------------------------
 
 function handleImageSelect(event) {
