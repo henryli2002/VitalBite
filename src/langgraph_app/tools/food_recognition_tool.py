@@ -193,14 +193,14 @@ async def _run_recognition_pipeline(image_bytes: bytes) -> dict:
                 {
                     "type": "text",
                     "text": (
-                        "Detect all distinct food portions or dishes in this image. "
-                        "Group items by 'plate' or 'serving'. For example, a burger and a side "
-                        "of fries are TWO separate items. A plate of salad (even if ingredients "
-                        "are visibly unmixed) is ONE single item. Do NOT detect individual "
-                        "ingredients within a single dish, and do NOT return sauces, condiments, "
-                        "spices, or garnishes as separate items — treat them as part of the dish "
-                        "they accompany. "
-                        "For each detected dish/portion, provide its name and its bounding box "
+                        "Detect all distinct food items in this image. "
+                        "VERY IMPORTANT: Recognition MUST be strictly at the 'plate' or 'bowl' level. "
+                        "Draw your bounding box around the ENTIRE plate/bowl. "
+                        "Do NOT segment or crop individual food items that are inside the same plate or bowl "
+                        "(e.g., do not separate meat and vegetables if they share the same plate). "
+                        "The ONLY exception is for clearly separated items like a burger and fries. "
+                        "Since our underlying model is trained on whole-plate images, the bounding boxes MUST encompass the entire plate. "
+                        "For each detected plate/portion, provide its name and its bounding box "
                         "(ymin, xmin, ymax, xmax normalized between 0 and 1000)."
                     ),
                 },
