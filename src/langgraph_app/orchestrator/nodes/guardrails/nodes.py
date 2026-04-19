@@ -67,6 +67,7 @@ async def _check_safety(
     node_name: str,
     messages: list | None = None,
     use_llm_fallback: bool = True,
+    skip_regex: bool = False,
 ) -> NodeOutput:
     """
     Generic function to check text for harmful content and prompt injection.
@@ -77,6 +78,10 @@ async def _check_safety(
         node_name: The name of the node for logging.
         messages: The message history for context.
         use_llm_fallback: Whether to use LLM-based safety check as secondary defense.
+        skip_regex: When True, bypass the prompt-injection regex stage. Intended
+            for the output guardrail: those detectors target untrusted user input
+            and produce false positives on our own model's prose (e.g. inline
+            code, "you must…" advice, JSON examples in markdown).
 
     Returns:
         NodeOutput with the safety analysis and potential short-circuit message.
@@ -90,6 +95,31 @@ async def _check_safety(
                 "intent": intent,
             }
         }
+
+    if skip_regex:
+        if not use_llm_fallback:
+            return {
+                "analysis": {
+                    "safety_safe": True,
+                    "safety_reason": None,
+                    "safety_category": None,
+                    "intent": intent,
+                },
+                "debug_logs": [
+                    {"node": node_name, "status": "info", "reason": "regex_skipped"}
+                ],
+            }
+        # Build a neutral score so the downstream LLM call still has the
+        # shape it expects, and logs stay uniform.
+        from langgraph_app.orchestrator.nodes.guardrails.config import SecurityScore
+        neutral = SecurityScore(
+            overall_threat_level=ThreatLevel.SAFE,
+            is_safe=True,
+            detection_results=[],
+            total_risk_score=0.0,
+            triggered_categories=[],
+        )
+        return await _llm_safety_check(text_to_check, intent, node_name, neutral)
 
     # Stage 1: Fast regex-based detection (defense in depth - layer 1)
     scorer = get_scorer()
@@ -315,4 +345,8 @@ async def output_guardrail_node(state: GraphState) -> NodeOutput:
 
     text_to_check = _extract_text(latest_ai_message) if latest_ai_message else ""
     intent = state.get("analysis", {}).get("intent", "chitchat")
-    return await _check_safety(text_to_check, intent, "output_guardrail")
+    # Skip the prompt-injection regex: by construction the model's own output is
+    # not an attack vector, and the regex misfires on ordinary health advice
+    # (inline code, JSON examples, "you should…" phrasing). Content-safety
+    # (hate/violence/sexual/self-harm/food-safety) is still enforced by the LLM.
+    return await _check_safety(text_to_check, intent, "output_guardrail", skip_regex=True)

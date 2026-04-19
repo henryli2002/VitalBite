@@ -427,6 +427,9 @@ html, body {
 
 /* Markdown in messages */
 
+.message p { margin: 0 0 6px; }
+.message p:last-child { margin-bottom: 0; }
+
 .message h3, .message h4 { margin: 6px 0 4px; font-size: 14px; font-weight: 600; }
 .message.user h3, .message.user h4 { color: #073642; }
 .message.assistant h3, .message.assistant h4 { color: var(--sol-cyan); }

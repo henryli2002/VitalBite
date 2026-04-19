@@ -37,34 +37,48 @@ logger = logging.getLogger("wabi.tools.food_recognition")
 _POST_ANALYSIS_GUIDANCE = {
     "apply": "When rendering this tool result to the user, follow these rules EXACTLY.",
     "rules": [
-        "1. IDENTIFY: open with a brief, warm sentence naming the foods detected.",
-        "2. TRANSLATE ITEM NAMES: the `items[*].name` field is always in English. "
-        "Translate each name into the user's language before displaying it. "
-        "Keep the original English only when no common translation exists or the "
-        "name is a proper/brand name.",
-        "3. TABLE: render a Markdown table with exactly six columns in this order — "
-        "Item, Weight, Calories, Fat, Carbs, Protein. Headers and units MUST be "
-        "in the user's language. "
-        "For Chinese responses the headers MUST be: "
-        "`| 项目 | 重量 | 热量 | 脂肪 | 碳水 | 蛋白质 |`. "
-        "For English responses keep the English headers as written above.",
-        "4. NO TOTAL ROW: do NOT append a Total / 总计 row — the frontend sums the "
-        "columns automatically.",
-        "5. ACCURACY: copy the numeric values from `items[*].nutrition` verbatim. "
-        "Do not recompute, round, or re-scale.",
-        "6. PERSONALIZATION: cross-check the detected items against the user's "
-        "allergies / dietary restrictions / health conditions from [USER CONTEXT] "
-        "in the system prompt. If any item conflicts, flag it explicitly in one "
-        "short sentence after the table.",
-        "7. MEAL FIT: internally consider the current meal period and the daily "
-        "calorie reference in [USER CONTEXT] to judge whether the total calories "
-        "fit the user's meal budget. Then state a ONE-sentence plain-language "
-        "verdict (e.g. 'a reasonable lunch', 'a bit heavy for dinner'). "
-        "Do NOT expose any percentage math, target ranges, or internal reasoning "
-        "numbers to the user.",
-        "8. LANGUAGE: the response supports Chinese and English ONLY. Detect the "
+        "1. IDENTIFY: open with a brief, warm sentence naming the foods detected, "
+        "in the user's language.",
+        "2. RENDER A NUTRITION BLOCK: emit a fenced code block with the info tag "
+        "`nutrition`, containing a JSON array. The frontend renders this block as "
+        "a rich nutrition card. You MUST use this format — do NOT emit a Markdown "
+        "table, raw HTML, or any other representation for the nutrition data.",
+        "3. ITEM SCHEMA (each element of the JSON array): "
+        "`{\"name\": <string>, \"weight_g\": <number>, \"calories\": <number>, "
+        "\"fat_g\": <number>, \"carbs_g\": <number>, \"protein_g\": <number>}`. "
+        "Numeric fields must be raw numbers (no units, no strings). JSON keys stay "
+        "in English exactly as shown.",
+        "4. FIELD MAPPING from tool output → block schema: "
+        "`items[*].name → name` (translated, see rule 5), "
+        "`items[*].nutrition.calculated_weight_g → weight_g`, "
+        "`items[*].nutrition.total_calories → calories`, "
+        "`items[*].nutrition.total_fat → fat_g`, "
+        "`items[*].nutrition.total_carb → carbs_g`, "
+        "`items[*].nutrition.total_protein → protein_g`. "
+        "Copy numeric values VERBATIM — do not recompute, round, or re-scale. Do "
+        "NOT include a total/summary row — the frontend sums automatically.",
+        "5. TRANSLATE NAMES: the `items[*].name` from the tool is in English. "
+        "Translate each into the user's language for the `name` field. Keep English "
+        "only for proper/brand names with no common translation.",
+        "6. EXAMPLE (Chinese reply):\n"
+        "这是识别结果：\n"
+        "```nutrition\n"
+        "[{\"name\":\"汉堡\",\"weight_g\":200,\"calories\":500,\"fat_g\":20,"
+        "\"carbs_g\":40,\"protein_g\":25}]\n"
+        "```",
+        "7. PERSONALIZATION (after the block, in prose): cross-check the detected "
+        "items against the user's allergies / dietary restrictions / health "
+        "conditions from [USER CONTEXT] in the system prompt. If any item "
+        "conflicts, flag it explicitly in one short sentence.",
+        "8. MEAL FIT (after the block, in prose): internally consider the current "
+        "meal period and daily calorie reference in [USER CONTEXT] to judge whether "
+        "the total fits the user's meal budget. State a ONE-sentence plain-language "
+        "verdict (e.g. 'a reasonable lunch', 'a bit heavy for dinner'). Do NOT "
+        "expose percentages, target ranges, or internal math.",
+        "9. LANGUAGE: the response supports Chinese and English ONLY. Detect the "
         "user's language from recent messages and write the ENTIRE reply (prose + "
-        "table + flags) in that language.",
+        "flags) in that language. Only the `name` values inside the JSON are "
+        "translated; all JSON keys stay in English.",
     ],
 }
 

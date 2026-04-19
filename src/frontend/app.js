@@ -325,10 +325,10 @@ async function sendMessage() {
                 lng: state.userLocation.lng,
             })
         );
-        // Show in UI
+        // Show in UI via the same figure.chat-image wrapper used on DB reload,
+        // so CSS size constraints apply consistently.
         const dataUrl = `data:${state.pendingImage.mimeType};base64,${state.pendingImage.base64}`;
-        const displayText = text ? `${text}\n\n![image](${dataUrl})` : `![image](${dataUrl})`;
-        appendMessage('user', displayText, now);
+        appendMessage('user', text, now, [{ src: dataUrl }]);
         clearImagePreview();
     } else {
         // Send text only
@@ -478,9 +478,14 @@ async function saveProfile() {
 function renderImageRefs(imageRefs) {
     if (!imageRefs || !imageRefs.length) return '';
     const uid = state.activeUserId;
-    if (!uid) return '';
     return imageRefs.map((ref) => {
-        const src = `/api/images/${encodeURIComponent(uid)}/${ref.uuid}`;
+        // `src` is set for fresh uploads (inline data URL); otherwise build the
+        // API URL from the server-assigned uuid.
+        let src = ref.src;
+        if (!src) {
+            if (!uid || !ref.uuid) return '';
+            src = `/api/images/${encodeURIComponent(uid)}/${ref.uuid}`;
+        }
         const desc = (ref.description || '').trim();
         const caption = desc ? `<div class="img-caption">${escapeHtml(desc)}</div>` : '';
         return `<figure class="chat-image"><img src="${src}" alt="image" loading="lazy"/>${caption}</figure>`;
@@ -1022,67 +1027,62 @@ function generateNutritionSummary(total, recommended, isZh = true) {
 }
 
 /**
- * Build the full nutrition visualization (cards + pie + bar). (cards + pie + bar).
- * Called from renderMarkdown when a nutrition table is detected.
+ * Build the full nutrition visualization (cards + pie + bar).
+ * Called from the ```nutrition fenced-block handler in _getMd().
+ * Input: array of {name, weight_g, calories, fat_g, carbs_g, protein_g}.
  */
-function buildNutritionViz(lines) {
-    // Generate a unique chart ID for this nutrition visualization instance
+function buildNutritionViz(items) {
+    if (!Array.isArray(items) || items.length === 0) return '';
+
     const chartId = `nchart-${_chartIdCounter++}`;
-    // Helper to clean markdown artifacts like "**" and trim whitespace
-    const clean = str => str.replace(/\*\*/g, '').trim();
-    // Detect if the content is in Chinese by checking for Chinese characters in the table
-    const isZh = /[\u4e00-\u9fa5]/.test(lines.join(''));  
+    const toNum = v => {
+        const n = typeof v === 'number' ? v : parseFloat(v);
+        return Number.isFinite(n) ? n : 0;
+    };
+    const fmtG = v => `${toNum(v).toFixed(1)} g`;
+    const fmtCal = v => `${Math.round(toNum(v))} kcal`;
+    const fmtMass = v => `${Math.round(toNum(v))} g`;
 
-    // Parse food items, ignoring any "Total" row from the LLM.
-    const foods = [];
-    for (let i = 2; i < lines.length; i++) {
-        const cols = lines[i].split('|').slice(1, -1).map(c => c.trim());
-        if (cols.length < 6) continue;
+    const namesConcat = items.map(it => String((it && it.name) || '')).join('');
+    const isZh = /[\u4e00-\u9fa5]/.test(namesConcat);
 
-        const isTotalRow = cols[0].includes('总计') || cols[0].includes('Total') || cols[0].includes('**');
-        if (isTotalRow) {
-            continue; // Ignore the LLM's total row entirely.
-        }
-        
-        const entry = {
-            name:    clean(cols[0]),
-            mass:    parseNutritionVal(clean(cols[1])),
-            cal:     parseNutritionVal(clean(cols[2])),
-            fat:     parseNutritionVal(clean(cols[3])),
-            carbs:   parseNutritionVal(clean(cols[4])),
-            protein: parseNutritionVal(clean(cols[5])),
-            massStr:    clean(cols[1]),
-            calStr:     clean(cols[2]),
-            fatStr:     clean(cols[3]),
-            carbsStr:   clean(cols[4]),
-            proteinStr: clean(cols[5]),
-        };
-        foods.push(entry);
-    }
-
-    // Always calculate the total manually from the parsed food items.
-    let total = null;
-    if (foods.length > 0) {
-        total = { 
-            name: isZh ? '总计' : 'Total',
-            cal: 0, fat: 0, carbs: 0, protein: 0, mass: 0 
-        };
-        foods.forEach(f => { 
-            total.cal += f.cal; 
-            total.fat += f.fat; 
-            total.carbs += f.carbs; 
-            total.protein += f.protein; 
-            total.mass += f.mass; 
+    const foods = items
+        .filter(it => it && typeof it === 'object')
+        .map(it => {
+            const mass = toNum(it.weight_g);
+            const cal = toNum(it.calories);
+            const fat = toNum(it.fat_g);
+            const carbs = toNum(it.carbs_g);
+            const protein = toNum(it.protein_g);
+            return {
+                name: String(it.name || '').trim() || (isZh ? '未命名' : 'Item'),
+                mass, cal, fat, carbs, protein,
+                massStr: fmtMass(mass),
+                calStr: fmtCal(cal),
+                fatStr: fmtG(fat),
+                carbsStr: fmtG(carbs),
+                proteinStr: fmtG(protein),
+            };
         });
-        // Create formatted string versions for the total card, as they won't be parsed
-        total.calStr = `${Math.round(total.cal)} kcal`;
-        total.massStr = `${Math.round(total.mass)} g`;
-        total.fatStr = `${total.fat.toFixed(1)} g`;
-        total.carbsStr = `${total.carbs.toFixed(1)} g`;
-        total.proteinStr = `${total.protein.toFixed(1)} g`;
-    }
 
-    if (!total) return ''; // Exit if there are no food items to process.
+    if (foods.length === 0) return '';
+
+    const total = {
+        name: isZh ? '总计' : 'Total',
+        cal: 0, fat: 0, carbs: 0, protein: 0, mass: 0,
+    };
+    foods.forEach(f => {
+        total.cal += f.cal;
+        total.fat += f.fat;
+        total.carbs += f.carbs;
+        total.protein += f.protein;
+        total.mass += f.mass;
+    });
+    total.calStr = fmtCal(total.cal);
+    total.massStr = fmtMass(total.mass);
+    total.fatStr = fmtG(total.fat);
+    total.carbsStr = fmtG(total.carbs);
+    total.proteinStr = fmtG(total.protein);
 
     // --- Pie chart: calorie contribution by food item ---
     const calSlices = foods.map((f, i) => ({
@@ -1263,87 +1263,52 @@ function buildRestaurantCards(items) {
     return `<div class="restaurant-cards">${cards}</div>`;
 }
 
+// Singleton markdown-it instance. Must be created lazily so we don't crash
+// if the vendor script failed to load; callers fall back to plain escaped text.
+let _md = null;
+function _getMd() {
+    if (_md) return _md;
+    if (typeof window.markdownit !== 'function') return null;
+    _md = window.markdownit({
+        html: false,        // do not parse raw HTML from model/user — XSS-safe default
+        linkify: true,      // auto-link bare URLs
+        breaks: true,       // treat single newline as <br>, matches old renderer
+        typographer: false,
+    });
+
+    // Custom fence handlers: map ```restaurants (and, later, ```nutrition)
+    // to first-class widgets. Unknown fences fall through to the default.
+    const _defaultFence = _md.renderer.rules.fence || ((tokens, idx, opts, env, self) =>
+        self.renderToken(tokens, idx, opts));
+    _md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
+        const token = tokens[idx];
+        const info = (token.info || '').trim();
+        if (info === 'restaurants') {
+            try {
+                return buildRestaurantCards(JSON.parse(token.content.trim()));
+            } catch (_) { /* fall through to default rendering */ }
+        }
+        if (info === 'nutrition') {
+            try {
+                return buildNutritionViz(JSON.parse(token.content.trim()));
+            } catch (_) { /* fall through to default rendering */ }
+        }
+        return _defaultFence(tokens, idx, opts, env, self);
+    };
+
+    // Wrap every rendered table with our scroll container and classes so
+    // existing .md-table styling carries over.
+    _md.renderer.rules.table_open = () => '<div class="table-wrapper"><table class="md-table">';
+    _md.renderer.rules.table_close = () => '</table></div>';
+
+    return _md;
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
-
-    // Extract ```restaurants JSON blocks FIRST so escapeHtml doesn't mangle
-    // the JSON string quotes. Replace with sentinels, substitute back at end.
-    const restaurantBlocks = [];
-    text = text.replace(/```restaurants\s*\n([\s\S]*?)```/g, (_, body) => {
-        try {
-            const data = JSON.parse(body.trim());
-            restaurantBlocks.push(buildRestaurantCards(data));
-        } catch (e) {
-            restaurantBlocks.push(`<pre><code>${escapeHtml(body)}</code></pre>`);
-        }
-        return `\x00RESTCARDS:${restaurantBlocks.length - 1}\x00`;
-    });
-
-    let html = escapeHtml(text);
-
-    // Nutrition Table -> Visual Charts + Cards
-    html = html.replace(/((?:\|.*\|\n?)+)/g, (match) => {
-        const lines = match.trim().split('\n');
-        if (lines.length < 3) return match;
-
-        const header = lines[0];
-        const isNutrition = header.includes('热量') || header.includes('Calories') || header.includes('重量');
-
-        if (isNutrition) {
-            return buildNutritionViz(lines);
-        } else {
-            // Generic table
-            let tableHtml = '<div class="table-wrapper"><table class="md-table">';
-            lines.forEach((line, index) => {
-                if (index === 1) return; // skip separator
-                const cols = line.split('|').slice(1, -1).map(c => c.trim());
-                tableHtml += '<tr>';
-                cols.forEach(col => {
-                    const clean = col.replace(/\*\*/g, '');
-                    if (index === 0) tableHtml += `<th>${clean}</th>`;
-                    else tableHtml += `<td>${clean}</td>`;
-                });
-                tableHtml += '</tr>';
-            });
-            tableHtml += '</table></div>';
-            return tableHtml;
-        }
-    });
-
-    // Markdown images (local echo only — history messages get their images
-    // rendered from the image_refs array, not from content placeholders).
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 300px; max-height: 300px; width: auto; height: auto; object-fit: contain; border-radius: 8px; margin-top: 8px;"/>');
-
-    // Headers
-    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-
-    // Bold
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-    // Italic
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-    // Code blocks
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-
-    // Inline code
-    html = html.replace(/`(.+?)`/g, '<code>$1</code>');
-
-    // Unordered lists
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
-    // Clean up nested <ul> tags
-    html = html.replace(/<\/ul>\s*<ul>/g, '');
-
-    // Line breaks (ignore line breaks inside our newly generated div blocks)
-    html = html.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>').replace(/<br\/>\s*(<div class="nutrition|<div class="nc-|<div class="table-wrapper|<div class="restaurant-cards|<\/div>|<svg|<\/svg>|<table|<\/table>|<tr|<\/tr>|<td|<\/td>|<th|<\/th>)/g, '$1');
-
-    // Swap restaurant card sentinels back. Strip <br/> on either side so the
-    // card block doesn't pick up extra blank space from the intro/closing lines.
-    html = html.replace(/(<br\/>)*\x00RESTCARDS:(\d+)\x00(<br\/>)*/g, (_, _b1, idx) => restaurantBlocks[parseInt(idx, 10)] || '');
-
-    return html;
+    const md = _getMd();
+    if (!md) return escapeHtml(text).replace(/\n/g, '<br/>');
+    return md.render(text);
 }
 
 // ---------------------------------------------------------------------------
