@@ -92,6 +92,10 @@ async def process_task(payload: Dict[str, Any]):
 
     logger.info(f"[{user_id}] Picked up AI task (thread_id: {thread_id})...")
 
+    # Legacy graph still reads ``response_channel`` directly off state (see
+    # state.py, router.py, food_recognition/agent.py) — the supervisor graph
+    # gets it via the ``publish_thinking`` callable plumbed through
+    # ``configurable`` below. Keeping both is the smallest-blast-radius fix.
     initial_state = {
         "messages": build_langchain_messages(payload.get("messages", [])),
         "session_id": payload.get("session_id", ""),
@@ -102,7 +106,20 @@ async def process_task(payload: Dict[str, Any]):
         "response_channel": response_channel,
     }
 
-    config = {"configurable": {"thread_id": thread_id}}
+    publish_thinking = None
+    if response_channel:
+        async def publish_thinking(partial_payload: Dict[str, Any]) -> None:
+            await redis_client.publish(
+                response_channel,
+                json.dumps(partial_payload, ensure_ascii=False),
+            )
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "publish_thinking": publish_thinking,
+        }
+    }
 
     try:
         accumulated_state = initial_state.copy()
@@ -113,6 +130,9 @@ async def process_task(payload: Dict[str, Any]):
                 accumulated_state.update(node_output)
                 if response_channel:
                     partial_payloads = []
+                    # Skip the outer "supervisor" node: its internal react loop
+                    # already publishes per-tool thinking events from inside
+                    # supervisor_node, so re-emitting here would duplicate them.
                     if node_name != "supervisor":
                         partial_payloads = build_thinking_partials(
                             node_name,

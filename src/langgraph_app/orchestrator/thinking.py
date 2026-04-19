@@ -102,16 +102,23 @@ def _json_loads_maybe(raw: str) -> Optional[Any]:
         return None
 
 
-def _infer_tool_name(tool_name: Optional[str], content: str) -> str:
-    if tool_name:
-        return tool_name
-    parsed = _json_loads_maybe(content)
-    if isinstance(parsed, dict):
-        if "items" in parsed or "total_calories" in parsed:
-            return "analyze_food_image"
-        if "restaurants" in parsed or "page" in parsed:
-            return "search_restaurants"
-    return "unknown"
+def _extract_list(parsed: Any, key: str) -> List[Any]:
+    if not isinstance(parsed, dict):
+        return []
+    value = parsed.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _infer_tool_name(tool_name: Optional[str]) -> str:
+    """Return the tool name off a ToolMessage, or ``"unknown"``.
+
+    We deliberately do NOT guess from the JSON payload's keys — key-based
+    heuristics ("items" → analyze_food_image, "page" → search_restaurants)
+    silently misclassify any future tool that happens to share a field name.
+    ``ToolMessage.name`` is reliably populated by LangChain, so the fallback
+    path should be treated as a real unknown, not a guessing game.
+    """
+    return tool_name or "unknown"
 
 
 def _tool_call_partial(tool_name: str, language: str) -> Dict[str, Any]:
@@ -150,11 +157,11 @@ def _tool_call_partial(tool_name: str, language: str) -> Dict[str, Any]:
 def _tool_result_partial(tool_name: str, content: str, language: str) -> Dict[str, Any]:
     parsed = _json_loads_maybe(content)
     if isinstance(parsed, dict) and parsed.get("error"):
-        title = "调整方案" if language == "Chinese" else "Adjusting the plan"
+        title = "这一步没成功" if language == "Chinese" else "Step didn’t complete"
         reasoning = (
-            f"{tool_name} 这一步没有顺利完成，我会换一种方式继续组织回复。"
+            f"{tool_name} 这一步没有拿到结果，我会在回答里向你说明。"
             if language == "Chinese"
-            else f"{tool_name} didn’t complete cleanly, so I’m adjusting the response path."
+            else f"{tool_name} didn’t return a usable result; I’ll call that out in the reply."
         )
         return _make_partial(
             node=f"tool_result_{tool_name}",
@@ -165,8 +172,8 @@ def _tool_result_partial(tool_name: str, content: str, language: str) -> Dict[st
         )
 
     if tool_name == "analyze_food_image":
-        items = parsed.get("items") if isinstance(parsed, dict) else None
-        count = len(items) if isinstance(items, list) else 0
+        items = _extract_list(parsed, "items")
+        count = len(items)
         names = _preview_names(items, "name")
         names_text = _join_examples(names, language)
         if language == "Chinese":
@@ -186,8 +193,8 @@ def _tool_result_partial(tool_name: str, content: str, language: str) -> Dict[st
             else:
                 reasoning = "I have the recognition result, and now I’m turning it into a clearer nutrition summary."
     elif tool_name == "search_restaurants":
-        restaurants = parsed.get("restaurants") if isinstance(parsed, dict) else None
-        count = len(restaurants) if isinstance(restaurants, list) else 0
+        restaurants = _extract_list(parsed, "restaurants")
+        count = len(restaurants)
         names = _preview_names(restaurants, "name")
         names_text = _join_examples(names, language)
         if language == "Chinese":
@@ -275,10 +282,7 @@ def build_thinking_partials(
         if last is None:
             return []
         content = _stringify_content(getattr(last, "content", ""))
-        tool_name = _infer_tool_name(
-            getattr(last, "name", None) or getattr(last, "tool_name", None),
-            content,
-        )
+        tool_name = _infer_tool_name(getattr(last, "name", None))
         if not content and tool_name == "unknown":
             return []
         return [_tool_result_partial(tool_name, content, resolved_language)]

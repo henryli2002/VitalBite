@@ -5,23 +5,25 @@ Supports two modes controlled by the USE_SUPERVISOR environment variable:
 - USE_SUPERVISOR=0: Legacy static Router + Workflow DAG (for rollback)
 """
 
-import json
+import asyncio
+import logging
 import os
 from typing import Literal
 
-import redis.asyncio as redis
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 
 from langgraph_app.config import config as _app_config
 from langgraph_app.orchestrator.thinking import build_thinking_partials
 from langgraph_app.utils.utils import get_dominant_language
 
+logger = logging.getLogger("wabi.graph")
+
 
 # ---------------------------------------------------------------------------
 # Feature flag
 # ---------------------------------------------------------------------------
 USE_SUPERVISOR = os.getenv("USE_SUPERVISOR", "1") == "1"
-_redis_client = redis.from_url(_app_config.REDIS_URL, decode_responses=True)
 
 
 # ---------------------------------------------------------------------------
@@ -40,55 +42,99 @@ def _create_supervisor_graph():
 
     supervisor_agent = create_supervisor_agent(supervisor_tools)
 
-    # Wrap the supervisor as a node function that invokes the react agent
-    async def supervisor_node(state: SupervisorState) -> dict:
-        """Run the Supervisor react agent and return its final state."""
-        # Build the input for the react agent (it expects a messages-based state)
+    # create_react_agent counts one node visit per recursion step: the sequence
+    # for N tool calls is agent → tools → ... → agent, which is 2N + 1 steps.
+    # Add a small buffer so the final "write the reply" agent step still fits.
+    _recursion_limit = 2 * _app_config.MAX_TOOL_CALLS_PER_TURN + 2
+
+    async def supervisor_node(
+        state: SupervisorState, config: RunnableConfig
+    ) -> dict:
+        """Run the Supervisor react agent and stream thinking events.
+
+        Transport (the optional Redis publish callback and client bookkeeping)
+        is injected via ``RunnableConfig.configurable`` so this node has no
+        direct dependency on Redis.
+        """
+        configurable = (config or {}).get("configurable") or {}
+        publish_thinking = configurable.get("publish_thinking")
+
+        conversation = state.get("messages", []) or []
+        language = get_dominant_language(conversation, default_lang="Chinese")
+
         agent_input = {
-            "messages": state.get("messages", []),
+            "messages": conversation,
+            "user_profile": state.get("user_profile"),
+            "user_context": state.get("user_context", {}),
         }
-        # Pass context through configurable so tools can access user_id, etc.
-        config = {
+        subgraph_config = {
+            "recursion_limit": _recursion_limit,
             "configurable": {
                 "user_id": state.get("user_id"),
                 "user_context": state.get("user_context", {}),
-            }
+            },
         }
 
-        # The react agent needs the full state for the prompt builder
-        # We pass it via the input since create_react_agent prompt callback receives state
-        agent_input["user_profile"] = state.get("user_profile")
-        agent_input["user_context"] = state.get("user_context", {})
-        response_channel = state.get("response_channel")
-        messages = state.get("messages", []) or []
-        language = get_dominant_language(messages, default_lang="Chinese")
+        streamed_messages: list = []
 
-        streamed_messages = []
-        async for chunk in supervisor_agent.astream(
-            agent_input,
-            config=config,
-            stream_mode="updates",
-        ):
-            if not isinstance(chunk, dict):
-                continue
-            for inner_node_name, inner_output in chunk.items():
-                if not isinstance(inner_output, dict):
+        async def _drive_react_loop() -> None:
+            async for chunk in supervisor_agent.astream(
+                agent_input,
+                config=subgraph_config,
+                stream_mode="updates",
+            ):
+                if not isinstance(chunk, dict):
                     continue
-                messages = inner_output.get("messages", []) or []
-                if isinstance(messages, list) and messages:
-                    streamed_messages.extend(messages)
-                if response_channel:
+                for inner_node_name, inner_output in chunk.items():
+                    if not isinstance(inner_output, dict):
+                        continue
+                    step_messages = inner_output.get("messages", []) or []
+                    if isinstance(step_messages, list) and step_messages:
+                        streamed_messages.extend(step_messages)
+                    if publish_thinking is None:
+                        continue
                     partial_payloads = build_thinking_partials(
                         inner_node_name,
                         inner_output,
                         language=language,
-                        context_messages=messages,
                     )
                     for partial_payload in partial_payloads:
-                        await _redis_client.publish(
-                            response_channel,
-                            json.dumps(partial_payload, ensure_ascii=False),
-                        )
+                        await publish_thinking(partial_payload)
+
+        try:
+            await asyncio.wait_for(
+                _drive_react_loop(),
+                timeout=_app_config.SUPERVISOR_TOTAL_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Supervisor react loop exceeded %.1fs budget; finalising with "
+                "%d partial message(s) collected so far.",
+                _app_config.SUPERVISOR_TOTAL_TIMEOUT_S,
+                len(streamed_messages),
+            )
+            if publish_thinking is not None:
+                timeout_payload = {
+                    "status": "partial",
+                    "node": "supervisor_timeout",
+                    "analysis": {
+                        "title": (
+                            "花的时间有点久" if language == "Chinese"
+                            else "Taking longer than expected"
+                        ),
+                        "reasoning": (
+                            "我这一轮想得有点久，先把目前已经拿到的信息整理成回答。"
+                            if language == "Chinese"
+                            else "This turn took longer than expected — wrapping up with what I have so far."
+                        ),
+                        "tone": "neutral",
+                        "language": language,
+                    },
+                }
+                try:
+                    await publish_thinking(timeout_payload)
+                except Exception:
+                    logger.exception("publish_thinking failed on timeout event")
 
         return {"messages": streamed_messages}
 

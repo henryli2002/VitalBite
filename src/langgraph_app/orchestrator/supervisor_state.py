@@ -15,14 +15,18 @@ from langgraph_app.orchestrator.state import _add_logs
 
 
 class SupervisorState(TypedDict, total=False):
-    """State for the Supervisor-based graph."""
+    """State for the Supervisor-based graph.
+
+    Transport concerns (``response_channel`` / publish callbacks) intentionally
+    live on ``RunnableConfig.configurable`` rather than on state — the graph
+    shouldn't know about Redis. See ``_create_supervisor_graph`` in graph.py.
+    """
     # Context
     user_id: Optional[str]
     user_name: Optional[str]
     session_id: str
     user_profile: Optional[Dict[str, Any]]
     user_context: Optional[Dict[str, Any]]
-    response_channel: Optional[str]
 
     # Guardrails compatibility
     analysis: Optional[Dict[str, Any]]

@@ -325,7 +325,9 @@ class TestSupervisorState:
         assert "user_id" in annotations
         assert "user_profile" in annotations
         assert "user_context" in annotations
-        assert "response_channel" in annotations
+        # response_channel is intentionally NOT on state — it lives on
+        # RunnableConfig.configurable as a publish_thinking callable.
+        assert "response_channel" not in annotations
         assert "analysis" in annotations
         assert "debug_logs" in annotations
 

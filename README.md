@@ -177,6 +177,11 @@ WABI/
 
 ## 更新日志
 
+### v4.1.0 (2026-04) — 图像预处理 + UUID 修复 + 餐次统一
+- **图像预处理 Letterbox**：底层模型裁剪后强制拉伸导致估算过大。改用"裁剪图居中 + 白边填充正方形"策略（`food_recognition_tool.py:319`），保留原始宽高比，模拟训练时的拍摄视角。
+- **Supervisor UUID 修复**：多轮对话中 LLM 可能把 `<attached_image description=...>` 的描述文本当作 UUID 传入工具。强化 prompt 强调必须传 32 位 hex UUID。
+- **餐次判定统一**：前端使用和后端一致的判定逻辑（早餐 7-9:30, 午餐 11:30-13:30, 晚餐 17:30-19:30）。
+
 ### v4.0.0 (2026-04) — Supervisor 迁移 + 图片 Registry
 - **Supervisor Agent**：Router + 4 Agent 静态 DAG 替换为 `create_react_agent` 的 LLM ↔ Tool 循环。支持复合意图（"看看健康吗，并推荐类似的"）单轮解决。
 - **图片 Registry**：WebSocket 层拦截 base64，落盘 `data/images/{user_id}/{uuid}.jpg`，DB 只存占位符。消除 messages 表与 Redis Pub/Sub 上的 base64 膨胀；识别工具返回后自动回写 `汉堡+薯条, 850kcal` 描述。历史数据可通过 `scripts/migrate_images.py` 迁移。
