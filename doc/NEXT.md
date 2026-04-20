@@ -11,23 +11,81 @@
 
 ---
 
-## Phase 1: 后端数据结构解耦（当前可做）
+## Phase 0: 前端体验与接入（优先于 Phase 1）
+
+这两项排在 Phase 1 之前。Phase 1 的"今日摄入"依赖 0.1 把每一项的 multiplier 写回数据库；0.2 则把当前的 admin 面板和用户端分离，为后续任何"用户自己打开就能用"的场景打底。
+
+### 0.1 食物份额滑块（先做，~1–2 天，难度：低）
+
+**需求**
+- nutrition-card 每一项加一个 50% – 150% 的横向滑条，默认 100%，与 `weight_g` 绑定
+- 实时拖动 → 前端本地重新计算并渲染 cal / mass / macro（不等后端）
+- 防抖 ~500ms → PATCH 回写到 `meal_logs`，只传百分比，不传重算后的数值
+- 未来 LLM 汇总（`get_today_nutrition`）读 `multiplier` 计算"真实摄入"
+
+**落点**
+- 前端：复用现有 `buildNutritionViz`，每个 `nutrition-card` 底部加 `<input type="range">` + debounce；总览卡 (`total-card`) 与饼图/柱图跟着滑块重算
+- 后端：新增 `PATCH /api/meal_logs/{id}` 接受 `{items: [{idx, multiplier}, ...]}`，写入 `meal_logs.items_json`
+- DB：`items_json` 每一项扩展 `"multiplier": 1.0`（缺省视为 1.0，向后兼容）
+
+**依赖**
+- 必须同时激活 `save_meal_log`（`food_recognition_tool.py` 识别完调用一次），否则没有 `meal_log_id` 可 PATCH。原 Phase 1 的第一项顺手落在这里。
+
+**风险点**
+- 滑块是 per-item，但营养卡里的饼图/柱图/总览是聚合的 —— 重算逻辑别遗漏
+- 乐观更新：若 PATCH 失败要回滚本地状态并提示（不要静默偏差）
+
+### 0.2 前端拆分 + 用户登录（后做，~2–3 天，难度：中）
+
+**需求**
+- 现有前端保留为**控制面板**（admin），移到 `/admin`
+- 新增**用户端**前端：只保留右侧聊天栏，入口 `/`，无用户切换控件
+- 登录：`username` 唯一，`password` 允许为空（测试期占位，后续上 argon2/bcrypt）
+- 登录后建立 WebSocket，`user_id` 从 session cookie 解析，禁止 URL 里冒名他人
+
+**落点**
+- DB（迁移）：
+  - `users` 加 `username TEXT UNIQUE NOT NULL`、`password_hash TEXT NULL`
+  - 老数据：以 `user_id` 作默认 `username`，`password_hash = NULL`
+- 后端：
+  - `POST /api/auth/signup` / `POST /api/auth/login` → 种 HttpOnly session cookie（走 `itsdangerous` 签名串，不引入 JWT）
+  - `/ws/{user_id}` 握手时校验 cookie 里的 user_id 与 path 一致
+- 前端：
+  - 新 `chat.html` + `chat.js`：从 `app.js` 抽出聊天渲染部分（`updateThinkingIndicator` / `appendMessage` / 营养卡 / 餐厅卡 / WebSocket 生命周期）
+  - 拆分策略：先抽成 `chat-core.js` 模块，admin 和用户端都 import，短期可以保留少量重复代码，后续再收敛
+
+**依赖**
+- 无强依赖 0.1，但强烈建议 0.1 先落地：如果用户端先上线再改滑块，交互抖动暴露面太大。
+
+**风险点**
+- Session cookie 要指定 `SameSite=Lax` + `Secure`（生产），本地开发放宽
+- WebSocket 握手鉴权：FastAPI 下需要在 `websocket.accept()` 前读 cookie
+- 老 user_id 形式（由 admin 面板生成的字符串）与新 username 的映射要做幂等迁移脚本
+
+---
+
+## Phase 1: 后端数据结构解耦
 
 ### 待完成
 
 - [ ] **激活 meal_logs 表**: 当前 `save_meal_log` 已实现但无调用方
-  - 位置：`src/server/db.py:377`
-  - 任务：改造 `food_recognition_tool.py`，在识别完成后调用 `save_meal_log`
-  - 目的：为 AI 提供结构化营养数据源（不从 Markdown 读）
+  - 位置：`src/server/db.py`（`save_meal_log`）
+  - 任务：改造 `food_recognition_tool.py`，识别完成后调用 `save_meal_log`，返回 `meal_log_id` 一起给前端
+  - 与 0.1 一起做（滑块 PATCH 需要这个 id）
 
-- [ ] **创建 get_today_nutrition 工具**: 供 Goal Planning Agent 查询今日营养
-  - DB: `SELECT sum(calories), sum(protein), ... FROM meal_logs WHERE user_id = ... AND timestamp >= today`
-  - 用途：当用户问"我今天吃了多少"时，不依赖聊天记录
+- [ ] **创建 get_today_nutrition 工具**: 供 Supervisor 查询今日营养
+  - DB: `SELECT sum(calories * multiplier), sum(protein * multiplier), ... FROM meal_logs WHERE user_id = ... AND timestamp >= today`
+  - 用途：当用户问"我今天吃了多少"时，不依赖聊天记录；必须套用 0.1 的 multiplier
 
 ### 已完成 ✅
 
 - [x] 统一用餐时间判定（早餐 7-9:30, 午餐 11:30-13:30, 晚餐 17:30-19:30）
 - [x] 修复 Supervisor UUID 引用错误（强调必须传 32 位 hex UUID）
+- [x] Supervisor 流式 thinking：react loop 内每个 tool call / result 推送细粒度思考步
+- [x] Supervisor 超时与递归上限：`SUPERVISOR_TOTAL_TIMEOUT_S` + `MAX_TOOL_CALLS_PER_TURN`
+- [x] Transport 解耦：`publish_thinking` 通过 `RunnableConfig.configurable` 注入，`supervisor_state.py` 不再携带 `response_channel`
+- [x] Supervisor prompt 的"FRESHNESS PRINCIPLE"：禁止复述上轮工具输出，每次命中工具语义必须重新调用
+- [x] 思考面板最后一步（`supervisor_reply`）保留展示，不再自动删除
 
 ---
 

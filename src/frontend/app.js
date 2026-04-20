@@ -946,20 +946,23 @@ function buildThinkingLogMarkup(step) {
     `;
 }
 
-function removeTrailingComposeLog(logs) {
-    if (!logs) return;
-    const composeKeys = ['supervisor_reply', 'chitchat'];
+// Keys that represent the "writing the final reply" step. We keep these visible
+// in the expanded thinking log (they tell the user the agent transitioned from
+// gathering info to drafting the answer), but we skip past them when picking
+// the one-line summary shown on the collapsed chip — the reply itself is
+// already right below.
+const COMPOSE_LOG_KEYS = ['supervisor_reply', 'chitchat'];
+
+function pickCollapsedSummaryBody(logs) {
+    if (!logs) return '';
     const items = Array.from(logs.querySelectorAll('li'));
     for (let i = items.length - 1; i >= 0; i -= 1) {
         const key = items[i].dataset.streamItem || '';
-        if (composeKeys.includes(key)) {
-            items[i].remove();
-            return;
-        }
-        if (items[i].dataset.status === 'active') {
-            break;
-        }
+        if (COMPOSE_LOG_KEYS.includes(key)) continue;
+        const body = items[i].querySelector('.thinking-log-body')?.textContent?.trim();
+        if (body) return body;
     }
+    return logs.lastElementChild?.querySelector('.thinking-log-body')?.textContent?.trim() || '';
 }
 
 function syncThinkingLogStates(logs, activeKey) {
@@ -991,7 +994,6 @@ function finalizeThinkingContainer(messageEl) {
     const panelMeta = container.querySelector('.thinking-panel-meta');
     const content = container.querySelector('.thinking-content');
     const logs = container.querySelector('.thinking-logs');
-    removeTrailingComposeLog(logs);
     container.classList.remove('expanded');
     container.classList.add('is-finished');
     chip.setAttribute('aria-expanded', 'false');
@@ -1001,8 +1003,7 @@ function finalizeThinkingContainer(messageEl) {
     panelMeta.textContent = t('thinkingStepsDone', lang)(logs.children.length);
     syncThinkingLogStates(logs, null);
     const summary = container.querySelector('.thinking-summary');
-    const lastLogBody = logs.lastElementChild?.querySelector('.thinking-log-body')?.textContent?.trim();
-    summary.textContent = lastLogBody || t('fallbackDone', lang);
+    summary.textContent = pickCollapsedSummaryBody(logs) || t('fallbackDone', lang);
     content.style.maxHeight = '0px';
 }
 

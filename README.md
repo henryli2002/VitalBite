@@ -50,9 +50,11 @@ wabi-ai (LangGraph Worker · 端口 8001)
 
 **Supervisor 核心特性**
 - 系统提示注入：用户档案、长期画像、当前时间/餐次、每日热量参考、语言
-- `MAX_TOOL_CALLS_PER_TURN` 限流；Tool 失败返回 `{"error": ...}` 由 Supervisor 决策降级
+- **FRESHNESS PRINCIPLE**：禁止复述上一轮工具输出；凡是工具能回答的问题本轮必须重新调用工具，避免因用户位置/图片/意图漂移给出陈旧答案
+- `MAX_TOOL_CALLS_PER_TURN` 折算为子图 `recursion_limit=2N+2` 限流；`SUPERVISOR_TOTAL_TIMEOUT_S` 给整个 react loop 再加一层 wall-clock 兜底
+- Tool 失败返回 `{"error": ...}` 由 Supervisor 决策降级（Rule 6：不重试、不编造，在回答里一句话说明）
 - `user_id`/`user_context` 通过 `RunnableConfig.configurable` 隐式传递，不污染 Tool 签名
-- 流式 thinking：Supervisor 内部 react loop 会在 Tool 调用前后推送细粒度状态给前端，例如“正在识别图片...”→“识别完成，发现 3 道食物。”→“正在搜索餐厅...”→“生成回复中...”
+- 流式 thinking：`supervisor_node` 用 `astream(stream_mode="updates")` 驱动 react loop，每次决策与每次 Tool 结果都推送一条细粒度中/英文思考事件（"查看图片"→"识别结果"→"搜索餐厅"→"候选餐厅"→"组织回答"）
 
 ---
 
@@ -177,10 +179,15 @@ WABI/
 
 ## 更新日志
 
-### v4.1.0 (2026-04) — 图像预处理 + UUID 修复 + 餐次统一
-- **图像预处理 Letterbox**：底层模型裁剪后强制拉伸导致估算过大。改用"裁剪图居中 + 白边填充正方形"策略（`food_recognition_tool.py:319`），保留原始宽高比，模拟训练时的拍摄视角。
+### v4.1.0 (2026-04) — 图像预处理 + Supervisor 流式 thinking + 提示词新鲜原则
+- **图像预处理 Letterbox**：底层模型裁剪后强制拉伸导致估算过大。改用"裁剪图居中 + 白边填充正方形"策略（`food_recognition_tool.py`），保留原始宽高比，模拟训练时的拍摄视角。
+- **Supervisor 流式 thinking**：`supervisor_node` 通过 `astream(stream_mode="updates")` 驱动 react loop，每次 LLM 决策与每次 Tool 结果都推送一条细粒度思考事件（如"查看图片"→"识别结果"→"搜索餐厅"→"候选餐厅"→"组织回答"）。中英文文案由 `orchestrator/thinking.py` 统一构造，根据对话语言自动切换。
+- **超时与递归上限**：`SUPERVISOR_TOTAL_TIMEOUT_S` 给整个 react loop 一个 wall-clock 兜底；`MAX_TOOL_CALLS_PER_TURN` 换算成 `recursion_limit=2N+2` 传给子图，避免工具失控链。
+- **Transport 解耦**：`response_channel` 从 `SupervisorState` 移出，改由 `ai.py` 合成 `publish_thinking` 闭包经 `RunnableConfig.configurable` 注入；`orchestrator/graph.py` 不再直接依赖 Redis。
+- **FRESHNESS PRINCIPLE**：提示词加入"凡是工具能回答的问题，本轮必须重新调用工具"的总原则，禁止复述上一轮 tool output；图片"仅描述回忆"的快捷路径收窄到纯召回场景，热量/营养/健康度等追问一律强制重调 `analyze_food_image`。
 - **Supervisor UUID 修复**：多轮对话中 LLM 可能把 `<attached_image description=...>` 的描述文本当作 UUID 传入工具。强化 prompt 强调必须传 32 位 hex UUID。
 - **餐次判定统一**：前端使用和后端一致的判定逻辑（早餐 7-9:30, 午餐 11:30-13:30, 晚餐 17:30-19:30）。
+- **思考面板最终步保留**：`finalizeThinkingContainer` 不再删除 `supervisor_reply` 节点，用户折叠后仍能看到完整思考链；折叠时的单行 summary 仅"跳过"compose 类节点选取正文，不再删 DOM。
 
 ### v4.0.0 (2026-04) — Supervisor 迁移 + 图片 Registry
 - **Supervisor Agent**：Router + 4 Agent 静态 DAG 替换为 `create_react_agent` 的 LLM ↔ Tool 循环。支持复合意图（"看看健康吗，并推荐类似的"）单轮解决。
