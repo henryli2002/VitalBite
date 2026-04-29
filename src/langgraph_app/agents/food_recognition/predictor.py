@@ -91,20 +91,48 @@ def predict_nutrition(image_bytes: bytes) -> Dict[str, float]:
     }
 
 
+_UUID_MARKER_RE = None  # lazy-compiled
+
+
+def _parse_image_uuid(text: str):
+    """Return the first UUID found in an <attached_image uuid=.../> marker, or None."""
+    global _UUID_MARKER_RE
+    if _UUID_MARKER_RE is None:
+        import re
+        _UUID_MARKER_RE = re.compile(r"<attached_image\s+uuid=([0-9a-f]{32})", re.IGNORECASE)
+    m = _UUID_MARKER_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def _load_image_by_uuid(uuid: str) -> bytes:
+    """Search data/images/**/{uuid}.jpg and return bytes, or None if not found."""
+    data_root = Path(__file__).resolve().parents[4] / "data" / "images"
+    for candidate in data_root.rglob(f"{uuid}.jpg"):
+        return candidate.read_bytes()
+    return None
+
+
 def extract_image_bytes(messages) -> bytes:
     for msg in reversed(messages):
-        if (
-            getattr(msg, "type", "") == "human"
-            or msg.__class__.__name__ == "HumanMessage"
-        ):
-            if isinstance(msg.content, list):
-                for part in msg.content:
-                    if isinstance(part, dict) and part.get("type") == "image_url":
-                        url = part.get("image_url", {}).get("url", "")
-                        if url.startswith("data:image"):
-                            base64_data = url.split("base64,")[-1]
-                            return base64.b64decode(base64_data)
-                        elif ";base64," in url:
-                            base64_data = url.split(";base64,")[-1]
-                            return base64.b64decode(base64_data)
+        if not (getattr(msg, "type", "") == "human" or msg.__class__.__name__ == "HumanMessage"):
+            continue
+
+        content = msg.content
+
+        # Legacy path: multipart list with base64 image_url
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    url = part.get("image_url", {}).get("url", "")
+                    if "base64," in url:
+                        return base64.b64decode(url.split("base64,")[-1])
+
+        # Current path: plain text with <attached_image uuid=.../> marker
+        if isinstance(content, str):
+            uuid = _parse_image_uuid(content)
+            if uuid:
+                img = _load_image_by_uuid(uuid)
+                if img:
+                    return img
+
     return None

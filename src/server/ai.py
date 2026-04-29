@@ -77,27 +77,61 @@ def build_thinking_partial(
     return None
 
 
+def _format_image_annotation(refs: List[Dict[str, Any]]) -> str:
+    """Build server-injected <attached_image uuid=.../> markers from image_refs.
+
+    Mirrors v4.1 logic so the router and recognition agent see the same format
+    regardless of which server version wrote the DB row.
+    """
+    lines = []
+    for ref in refs or []:
+        if not isinstance(ref, dict):
+            continue
+        uid = (ref.get("uuid") or "").strip()
+        if not uid:
+            continue
+        desc = (ref.get("description") or "").strip()
+        if desc:
+            lines.append(f'<attached_image uuid={uid} description="{desc}"/>')
+        else:
+            lines.append(f"<attached_image uuid={uid}/>")
+    return "\n".join(lines)
+
+
 def build_langchain_messages(history: List[Dict]) -> List[BaseMessage]:
-    """Convert JSON messages back into LangChain message objects."""
+    """Convert JSON messages back into LangChain message objects.
+
+    Handles both storage formats:
+    - Legacy (v3.3 DB): content is a JSON-encoded base64 multipart list.
+    - Current (v4.1 DB): content is plain text; images live in image_refs JSONB.
+    """
     messages = []
     for msg in history:
         role = msg.get("role")
-        content = msg.get("content")
+        content = msg.get("content") or ""
         timestamp = msg.get("timestamp")
+        refs = msg.get("image_refs") or []
+        extra = {"timestamp": timestamp} if timestamp else {}
+
         if role == "user":
-            messages.append(
-                HumanMessage(
-                    content=content,
-                    additional_kwargs={"timestamp": timestamp} if timestamp else {},
-                )
-            )
+            # Legacy: JSON-encoded base64 list stored in content
+            if isinstance(content, str) and content.startswith("[") and '"image_url"' in content:
+                try:
+                    content = json.loads(content)
+                except Exception:
+                    pass
+
+            if isinstance(content, list):
+                # Already multipart — pass through as-is
+                messages.append(HumanMessage(content=content, additional_kwargs=extra))
+            else:
+                # Plain text (v4.1 format): append <attached_image> markers from image_refs
+                annotation = _format_image_annotation(refs)
+                final = f"{content}\n\n{annotation}" if (content and annotation) else (annotation or content)
+                messages.append(HumanMessage(content=final, additional_kwargs=extra))
+
         elif role == "assistant":
-            messages.append(
-                AIMessage(
-                    content=content,
-                    additional_kwargs={"timestamp": timestamp} if timestamp else {},
-                )
-            )
+            messages.append(AIMessage(content=content, additional_kwargs=extra))
     return messages
 
 

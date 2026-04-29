@@ -213,12 +213,15 @@ async def recognition_node(state: GraphState) -> NodeOutput:
         image_bytes = extract_image_bytes(messages)
 
         if not image_bytes:
+            content = (
+                "抱歉，我没有在您的消息中找到图片，也没有找到有效的食物。请重新上传图片后再试。"
+                if lang == "Chinese"
+                else "Sorry, I couldn't find an image in your message. Please upload a food photo and try again."
+            )
             return {
                 "messages": [
                     AIMessage(
-                        content="未在消息中找到有效的图片。"
-                        if lang == "Chinese"
-                        else "No valid image found.",
+                        content=content,
                         additional_kwargs={"timestamp": datetime.now(timezone.utc).isoformat()},
                     )
                 ],
@@ -292,17 +295,18 @@ async def recognition_node(state: GraphState) -> NodeOutput:
         nutrition_source = "local_model"
 
         if not detected_items:
-            # No items detected — run local model on the full image
-            logger.info("No items detected. Falling back to full image.")
-            try:
-                res = predict_nutrition(image_bytes)
-                itemized_nutrition.append({"name": "Full Meal", "nutrition": res})
-                for k in total_nutrition:
-                    total_nutrition[k] += res.get(k, 0.0)
-            except Exception as e:
-                logger.warning(f"[recognition] Local model failed on full image: {e}. Using LLM estimate.")
-                nutrition_source = "llm_estimate"
-                itemized_nutrition = await _estimate_nutrition_with_llm(client, [{"name": "Meal"}], lang)
+            # No food bounding boxes returned — tell the user directly
+            logger.info("No food items detected in image. Returning clean message.")
+            no_food_msg = (
+                "抱歉，我没有在图片中检测到任何食物。请尝试上传一张清晰的食物照片。"
+                if lang == "Chinese"
+                else "Sorry, I couldn't detect any food items in the image. Please try uploading a clearer photo of your meal."
+            )
+            return {
+                "messages": [AIMessage(content=no_food_msg)],
+                "recognition_result": None,
+                "debug_logs": [{"node": "recognition", "status": "no_food_detected"}],
+            }
         else:
             img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             w, h = img.size

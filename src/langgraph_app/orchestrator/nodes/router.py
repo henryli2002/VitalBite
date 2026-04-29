@@ -147,11 +147,16 @@ Identify the user's primary goal based on the conversation history. Pay close at
 [CONTEXT]
 Current Time: {current_hour}:{current_minute:02d} ({meal_time}){profile_context}
 
+[IMAGE FORMAT]
+Attached images are represented as server-injected markers at the end of a user message:
+  <attached_image uuid=<32-hex-id>/>
+If such a marker is present in the current message, treat it as a food image being attached.
+
 [INTENT RULES]
-1. "recognition": Goal is to identify food/nutrition from an image. If a food image is present, confidence for this intent should be VERY HIGH (>0.9).
+1. "recognition": Goal is to identify food/nutrition from an image. If an <attached_image> marker is present, confidence for this intent should be VERY HIGH (>0.9).
 2. "recommendation": Finding places to eat. Triggers on explicit requests or implicit signs of hunger during meal times.
 3. "goalplanning": Diet planning, habit building, long-term nutrition goals, or questions about eating history and patterns.
-4. "chitchat": Default for everything else — greetings, unrelated topics, non-food/blurry images, vague inputs without context, requests for image recognition without an attached image, or meaningless noise.
+4. "chitchat": Default for everything else — greetings, unrelated topics, vague inputs without context, requests for image recognition WITHOUT an <attached_image> marker present, or meaningless noise.
 
 [CONSTRAINTS]
 Output with EXACTLY this plain-text format (no markdown, no code block, no extra labels):
