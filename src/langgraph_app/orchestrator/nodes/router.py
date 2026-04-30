@@ -1,4 +1,4 @@
-"""Intent routing node — local Qwen3.5-0.8B LoRA model via mlx_lm."""
+"""Intent routing node — local Qwen3.5-9B zero-shot model via mlx_lm."""
 
 from typing import Any, Literal, Optional
 from datetime import datetime, timezone, timedelta
@@ -37,7 +37,7 @@ def _get_redis() -> redis.Redis:
 
 # ── Local model singleton ─────────────────────────────────────────────────────
 
-MODEL_PATH = "/Users/henryli/.omlx/models/Qwen3.5-0.8B-Intent-v1"
+MODEL_PATH = "/Users/henryli/.omlx/models/Qwen3.5-9B-OptiQ-4bit"
 
 _model = None
 _tokenizer = None
