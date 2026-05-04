@@ -1,0 +1,152 @@
+{
+  "0.8B-zero": {
+    "n": 100,
+    "avg_confidence": 0.7109,
+    "avg_reasoning_score": 3.92,
+    "score_distribution": {
+      "0": 0,
+      "1": 0,
+      "2": 0,
+      "3": 8,
+      "4": 92
+    },
+    "by_predicted_intent": {
+      "chitchat": {
+        "n": 26,
+        "avg_reasoning_score": 3.8846
+      },
+      "goalplanning": {
+        "n": 14,
+        "avg_reasoning_score": 3.9286
+      },
+      "recognition": {
+        "n": 40,
+        "avg_reasoning_score": 3.95
+      },
+      "recommendation": {
+        "n": 20,
+        "avg_reasoning_score": 3.9
+      }
+    }
+  },
+  "0.8B-LoRA-expA": {
+    "n": 100,
+    "avg_confidence": 0.9019,
+    "avg_reasoning_score": 1.79,
+    "score_distribution": {
+      "0": 0,
+      "1": 24,
+      "2": 73,
+      "3": 3,
+      "4": 0
+    },
+    "by_predicted_intent": {
+      "chitchat": {
+        "n": 33,
+        "avg_reasoning_score": 1.6667
+      },
+      "goalplanning": {
+        "n": 20,
+        "avg_reasoning_score": 1.8
+      },
+      "recognition": {
+        "n": 22,
+        "avg_reasoning_score": 2.0455
+      },
+      "recommendation": {
+        "n": 25,
+        "avg_reasoning_score": 1.72
+      }
+    }
+  },
+  "9B-zero": {
+    "n": 100,
+    "avg_confidence": 0.9585,
+    "avg_reasoning_score": 3.93,
+    "score_distribution": {
+      "0": 0,
+      "1": 0,
+      "2": 1,
+      "3": 5,
+      "4": 94
+    },
+    "by_predicted_intent": {
+      "chitchat": {
+        "n": 33,
+        "avg_reasoning_score": 3.8182
+      },
+      "goalplanning": {
+        "n": 20,
+        "avg_reasoning_score": 3.95
+      },
+      "recognition": {
+        "n": 25,
+        "avg_reasoning_score": 4.0
+      },
+      "recommendation": {
+        "n": 22,
+        "avg_reasoning_score": 4.0
+      }
+    }
+  },
+  "gemma-4e4b": {
+    "n": 100,
+    "avg_confidence": 0.8906,
+    "avg_reasoning_score": 3.45,
+    "score_distribution": {
+      "0": 0,
+      "1": 1,
+      "2": 21,
+      "3": 10,
+      "4": 68
+    },
+    "by_predicted_intent": {
+      "chitchat": {
+        "n": 33,
+        "avg_reasoning_score": 2.6667
+      },
+      "goalplanning": {
+        "n": 20,
+        "avg_reasoning_score": 3.8
+      },
+      "recognition": {
+        "n": 24,
+        "avg_reasoning_score": 3.9167
+      },
+      "recommendation": {
+        "n": 23,
+        "avg_reasoning_score": 3.7826
+      }
+    }
+  },
+  "A-Gemini": {
+    "n": 100,
+    "avg_confidence": 0.8479,
+    "avg_reasoning_score": 3.45,
+    "score_distribution": {
+      "0": 0,
+      "1": 0,
+      "2": 17,
+      "3": 21,
+      "4": 62
+    },
+    "by_predicted_intent": {
+      "chitchat": {
+        "n": 35,
+        "avg_reasoning_score": 2.8
+      },
+      "goalplanning": {
+        "n": 20,
+        "avg_reasoning_score": 3.65
+      },
+      "recognition": {
+        "n": 24,
+        "avg_reasoning_score": 3.9583
+      },
+      "recommendation": {
+        "n": 21,
+        "avg_reasoning_score": 3.7619
+      }
+    }
+  }
+}
