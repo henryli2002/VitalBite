@@ -182,6 +182,11 @@ uv pip install --no-deps -e .
 
 ### 模型和参数需求
 
-当前意图路由直接加载 `~/.omlx/models/Qwen3.5-9B-OptiQ-4bit`（源代码中是原机器的绝对路径），依赖 MLX/Apple Silicon；迁移时需修改 router.py 的 MODEL_PATH。该目录在 legacy 外，本次未清理。训练实验还引用 Qwen3.5-0.8B-OptiQ-4bit / gemma-4-e4b-it-4bit。食物模型为 EfficientNet-B0，分类头 1280→256→5，Dropout 0.3，输入 224×224，输出重量/热量/脂肪/碳水/蛋白质；必须同时保留 `src/langgraph_app/agents/food_recognition/model/best_model.pt` 和 `norm_stats.json`。这些自训练权重、eval 下的训练模型和 LoRA adapters 均保留，不能仅凭模型名重新下载。Gemini 默认 gemini-2.5-flash-lite；其他 provider 配置见 config.py 和 .env.example。
+当前意图路由直接加载 `~/.omlx/models/Qwen3.5-9B-OptiQ-4bit`（源代码中是原机器的绝对路径），依赖 MLX/Apple Silicon；迁移时需修改 router.py 的 MODEL_PATH。该目录在 legacy 外，本次未清理。训练实验还引用 Qwen3.5-0.8B-OptiQ-4bit / gemma-4-e4b-it-4bit。食物模型为 EfficientNet-B0，分类头 1280→256→5，Dropout 0.3，输入 224×224，输出重量/热量/脂肪/碳水/蛋白质；运行时需要配套 best_model.pt 和 norm_stats.json；本次已删除 best_model.pt、实验权重及训练数据，仅保留 norm_stats 和训练参数记录，需恢复数据并重新训练。Gemini 默认 gemini-2.5-flash-lite；其他 provider 配置见 config.py 和 .env.example。
 
-.env 和实际凭据保留在本地，不纳入提交。Python 缓存、工具缓存和可重建环境可删除；业务数据、自训练模型、评测结果及 Git 历史保留。
+.env 和实际凭据保留在本地，不纳入提交。Python 缓存、工具缓存和可重建环境可删除；业务数据、文本评测结论及 Git 历史保留；自训练权重和配套训练/验证/测试数据已按后续归档要求删除。
+
+
+### 自训练产物与数据清理（2026-11-06）
+
+模型来源、训练方式、参数和数据来源已归档到 [模型训练记录](docs/model-training-archive.md)。对应权重和本机可找到的配套数据已删除，逐文件清单及 SHA-256 见 [删除元信息](training-cleanup-manifest.json)。未记录的来源明确标为缺失；uv 不会恢复模型或数据。训练代码、配置、norm_stats 和文本结论保留；旧说明中的训练/评测命令需先重建数据与权重才能运行。

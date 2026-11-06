@@ -1,3 +1,5 @@
+> 归档状态（2026-11-06）：本目录的训练权重及配套数据/图片样本已删除。下文是历史实验记录；来源、参数和重建前提见 [训练归档](../../docs/model-training-archive.md)。
+
 # Intent Routing — Evaluation
 
 评估对象：`orchestrator/nodes/router.py:intent_router_node` 输出的 4 类意图标签（`recognition` / `recommendation` / `chitchat` / `goalplanning`）。

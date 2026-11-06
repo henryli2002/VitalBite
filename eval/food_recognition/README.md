@@ -1,3 +1,5 @@
+> 归档状态（2026-11-06）：本目录的训练权重及配套数据/图片样本已删除。下文是历史实验记录；来源、参数和重建前提见 [训练归档](../../docs/model-training-archive.md)。
+
 # WABI Food Recognition - Evaluation Framework
 
 This directory contains the scripts and models for evaluating different approaches to food nutrition estimation from images.

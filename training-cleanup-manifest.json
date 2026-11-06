@@ -1,0 +1,362 @@
+{
+  "date": "2026-11-06",
+  "files": [
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/food_dataset/dish_images.pkl",
+      "symlink": false,
+      "bytes": 2501055235,
+      "sha256": "983fc670d21ef47fd781a20844bf4105a7f2ad621cb3f160bc6d8604f432635e"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/food_dataset/dishes.xlsx",
+      "symlink": false,
+      "bytes": 233725,
+      "sha256": "00bb0cac4d6ce7b8ee77d9719af597f23e92d887b60da8c017d991de06cae360"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_efficientnet_b0/best_model.pt",
+      "symlink": false,
+      "bytes": 17642235,
+      "sha256": "6f86805864ba472fa79dd7b0717cc523b10e5bbc02f27a7aa696dbf53e9a468f"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_efficientnet_b0/final_model.pt",
+      "symlink": false,
+      "bytes": 17642603,
+      "sha256": "49b2c0286167a1478c7179df91358d2e992e60f9c10fd20b01591dedc2d08c61"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenet_v3_large/best_model.pt",
+      "symlink": false,
+      "bytes": 13079049,
+      "sha256": "100a9714941fdccdeab997b20c34022fcd9508fb577d37003df664caa176d2dc"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenet_v3_large/final_model.pt",
+      "symlink": false,
+      "bytes": 13079367,
+      "sha256": "72a54ee429a6437261892520f4777a3c64aa4bb829dcee12c8e29897ab926a16"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenet_v3_small/best_model.pt",
+      "symlink": false,
+      "bytes": 4435205,
+      "sha256": "d6e9e558ccfd7f1250a45b5da8ee7cff18f7015d9a36767dea70ad1afc5b2531"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenet_v3_small/final_model.pt",
+      "symlink": false,
+      "bytes": 4435455,
+      "sha256": "0402a13cf500eee22fd05ea618c5d87b92e34c12fa65971c789eba42da55ba1b"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenetv4_conv_large/best_model.pt",
+      "symlink": false,
+      "bytes": 126082167,
+      "sha256": "10e22df6c6f89442a36f6ca03bf00b85dd8472472b270e5dcfc06f52179f5f9c"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenetv4_conv_large/final_model.pt",
+      "symlink": false,
+      "bytes": 126082787,
+      "sha256": "9e354a2da3bf40292adecec0d261f840f639e20f6d563d7dbaad272dc2b1c243"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenetv4_conv_small/best_model.pt",
+      "symlink": false,
+      "bytes": 10197415,
+      "sha256": "55c0e530ca156b0911a0020b42c471d825135f5adcc6d99d1c09cdc3a18b7e7d"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_mobilenetv4_conv_small/final_model.pt",
+      "symlink": false,
+      "bytes": 10197699,
+      "sha256": "045115aec80548eaccfadeaa4536045afaffeecd9ee1f9cbd0abcb00dd25f7e4"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_tf_efficientnet_lite4/best_model.pt",
+      "symlink": false,
+      "bytes": 47562357,
+      "sha256": "c088be5a7561ec21fe875ea5acdcde66b7745291eed7f74cec706294509aaed9"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/food_recognition/models/model_tf_efficientnet_lite4/final_model.pt",
+      "symlink": false,
+      "bytes": 47562911,
+      "sha256": "7853a73137b75e3aab0e7f1cce9db40e5a8de89eb49238533101c1f737dc6008"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/dataset/abnormal.jsonl",
+      "symlink": false,
+      "bytes": 41477,
+      "sha256": "bc41f2d97e2836a34f3da3ae1612caeecf37675b42058f73f263501641f18c93"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/dataset/normal.jsonl",
+      "symlink": false,
+      "bytes": 108687,
+      "sha256": "e02d1dc113b8c5a004772fc8c0d0084dc1154eed549b2a2f46efc74efb50923a"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/dataset/smoke_en.jsonl",
+      "symlink": false,
+      "bytes": 3531,
+      "sha256": "9c2cc17f439e30b38a5cb2934e0221ade41d525a52e0036eba475af1e9454c60"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/dataset/test.jsonl",
+      "symlink": false,
+      "bytes": 42451,
+      "sha256": "bf7f7bab2aacea1f388b83fe74ebc86ac9782902ddd9882ad37ced7a13724761"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/dataset/train.jsonl",
+      "symlink": false,
+      "bytes": 107713,
+      "sha256": "ff85586550c4299a6bd48c9040d39a1bc6d334fb41c3c8c39bc7d438a9fe3053"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/fixtures/883a2b226d1a478a8cfc78815a0fd848.jpg",
+      "symlink": false,
+      "bytes": 217450,
+      "sha256": "37e86493b5264fc3b72f541da7f39c5a71c890952db848945d78622478bb6fcb"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/fixtures/8ea3c01b37184e6592c07b6922306ead.jpg",
+      "symlink": false,
+      "bytes": 11574,
+      "sha256": "acaa5c5a579d8e04ed6812ecc495ce2f51cf79a8a063addc1c3a4a4a65980b5b"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/fixtures/dd534c4c63574acd9136972bc1bbc020.jpg",
+      "symlink": false,
+      "bytes": 217450,
+      "sha256": "37e86493b5264fc3b72f541da7f39c5a71c890952db848945d78622478bb6fcb"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_A_all_8layers/0000100_adapters.safetensors",
+      "symlink": false,
+      "bytes": 7230451,
+      "sha256": "a15eb5e99db603b486f73fa63eeec36dd62450e3aabd2764de2db8dd5b90fe9b"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_A_all_8layers/0000200_adapters.safetensors",
+      "symlink": false,
+      "bytes": 7230451,
+      "sha256": "5e490ea35a0988e23378bceaa527cc259d5244c1f2bf40ecbe8d13abeb0d5ce3"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_A_all_8layers/0000300_adapters.safetensors",
+      "symlink": false,
+      "bytes": 7230451,
+      "sha256": "ea1baa17e588cbc95f1f64628c38dba7130cd86896752abc78f661e2dd814606"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_A_all_8layers/0000400_adapters.safetensors",
+      "symlink": false,
+      "bytes": 7230451,
+      "sha256": "2b228e332cfc4c77e7168c532dc042cfa2a2b377bbd12ddd5588bc6803124e5a"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_A_all_8layers/0000500_adapters.safetensors",
+      "symlink": false,
+      "bytes": 7230451,
+      "sha256": "a3352e5ca790a40869aae04f369a4dcb923f9d8eaa73dc9aaa5c50aa7fecbf50"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_A_all_8layers/adapters.safetensors",
+      "symlink": false,
+      "bytes": 7230451,
+      "sha256": "a3352e5ca790a40869aae04f369a4dcb923f9d8eaa73dc9aaa5c50aa7fecbf50"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_B_attn_8layers/0000100_adapters.safetensors",
+      "symlink": false,
+      "bytes": 2593221,
+      "sha256": "48be49f2b16d6d2c864d33b9199498361141cc5223c58186f82ec6a8dd7dfd7b"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_B_attn_8layers/0000200_adapters.safetensors",
+      "symlink": false,
+      "bytes": 2593221,
+      "sha256": "175e8eade0a3c5aeef643d5688073ba1bcfeeb12892833d9594aebc3e481339b"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_B_attn_8layers/0000300_adapters.safetensors",
+      "symlink": false,
+      "bytes": 2593221,
+      "sha256": "fe99c31da74ce1362c49bdc9bde41d9bed3b02b17b0b1591d245cc43081cc42f"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_B_attn_8layers/0000400_adapters.safetensors",
+      "symlink": false,
+      "bytes": 2593221,
+      "sha256": "b26da8b6a39ebb8c94ceec5943f13f7de2773d8520d5c10d7675f49ddd650c75"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_B_attn_8layers/0000500_adapters.safetensors",
+      "symlink": false,
+      "bytes": 2593221,
+      "sha256": "1e886d368770b89d103c07e8ed3232ed73b9f977f974c820a51e589b030eea2a"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_B_attn_8layers/adapters.safetensors",
+      "symlink": false,
+      "bytes": 2593221,
+      "sha256": "1e886d368770b89d103c07e8ed3232ed73b9f977f974c820a51e589b030eea2a"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_C_mlp_8layers/0000100_adapters.safetensors",
+      "symlink": false,
+      "bytes": 3544663,
+      "sha256": "50467a34c5db141114a1149fb1ae40cce87dbc901d17b34b9f22e3bc3893bbfe"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_C_mlp_8layers/0000200_adapters.safetensors",
+      "symlink": false,
+      "bytes": 3544663,
+      "sha256": "8be9c42a56925daf627ad1575f126de5e16975f3d2fcc019f1cbdcbc6417aa1d"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_C_mlp_8layers/0000300_adapters.safetensors",
+      "symlink": false,
+      "bytes": 3544663,
+      "sha256": "4b8680a1a64fc90a07edb8189e8fed26d6d20e49551da6e2dad77081a5db8482"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_C_mlp_8layers/0000400_adapters.safetensors",
+      "symlink": false,
+      "bytes": 3544663,
+      "sha256": "f9e51942c95faf1fb29660f98e881c9e1e5209540171acf47ddff714fb20abba"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_C_mlp_8layers/0000500_adapters.safetensors",
+      "symlink": false,
+      "bytes": 3544663,
+      "sha256": "c18cc096d0519f31a2cede1ff2d66723b0ea14009616d6fdc62256cea94f7207"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_C_mlp_8layers/adapters.safetensors",
+      "symlink": false,
+      "bytes": 3544663,
+      "sha256": "c18cc096d0519f31a2cede1ff2d66723b0ea14009616d6fdc62256cea94f7207"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_D_all_16layers/0000100_adapters.safetensors",
+      "symlink": false,
+      "bytes": 14461040,
+      "sha256": "6b0617a67f525c681bd3cf8a0604aa1b0ba36d35aa8a57b39a2f84317cb6925f"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_D_all_16layers/0000200_adapters.safetensors",
+      "symlink": false,
+      "bytes": 14461040,
+      "sha256": "8af7ed8af136bfa121a4796ff44a18964716dc3699d4798382b6d804e596553f"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_D_all_16layers/0000300_adapters.safetensors",
+      "symlink": false,
+      "bytes": 14461040,
+      "sha256": "d3f13433ca60443ce03c436c7e7607191151c23a09ca72ee435a2bf3312c7469"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_D_all_16layers/0000400_adapters.safetensors",
+      "symlink": false,
+      "bytes": 14461040,
+      "sha256": "0f89c7fe7703f3966ebbe42fff0663a5b89010e66806aed43ed1bc553c6fbe02"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_D_all_16layers/0000500_adapters.safetensors",
+      "symlink": false,
+      "bytes": 14461040,
+      "sha256": "0479d97c4ef8b3cec25a1a690cee6b71e92252aa8d0f77271f6ebacf8a572741"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/adapters/exp_D_all_16layers/adapters.safetensors",
+      "symlink": false,
+      "bytes": 14461040,
+      "sha256": "0479d97c4ef8b3cec25a1a690cee6b71e92252aa8d0f77271f6ebacf8a572741"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/mlx_train.jsonl",
+      "symlink": false,
+      "bytes": 462389,
+      "sha256": "1b2e56683d9733349a91de6381dbc475504f6347e198faf3b0d632539f097867"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/mlx_valid.jsonl",
+      "symlink": false,
+      "bytes": 51502,
+      "sha256": "8433ba0037285543712b0a368f84512fab271572e489fe00b4393e7b44bf8312"
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/train.jsonl",
+      "symlink": true,
+      "target": "mlx_train.jsonl",
+      "bytes": 0
+    },
+    {
+      "project": "VitalBite",
+      "path": "eval/intent/train/valid.jsonl",
+      "symlink": true,
+      "target": "mlx_valid.jsonl",
+      "bytes": 0
+    },
+    {
+      "project": "VitalBite",
+      "path": "src/langgraph_app/agents/food_recognition/model/best_model.pt",
+      "symlink": false,
+      "bytes": 17642235,
+      "sha256": "6f86805864ba472fa79dd7b0717cc523b10e5bbc02f27a7aa696dbf53e9a468f"
+    }
+  ]
+}
