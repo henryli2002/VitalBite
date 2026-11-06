@@ -88,3 +88,10 @@ logs/
 # 评测框架例外（测试 fixtures 和可视化结果需要跟踪）
 !eval/intent/fixtures/*.jpg
 !eval/intent/train/experiments/loss_curves.png
+
+# Rebuildable local caches
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+.venv/
+!requirements.lock

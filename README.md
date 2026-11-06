@@ -165,3 +165,23 @@ WABI/
 - 架构升级：SQLite → PostgreSQL + Redis 异步微服务
 - 多模态增强：修复图像 base64 在 Redis 传输中的丢失问题
 - 数据隔离：生产环境过滤测试账号
+
+
+## 归档环境恢复（2026-11-06）
+
+原项目内未发现可导出的虚拟环境。本次使用 uv 0.13.5，根据现有依赖配置重新解析并生成 `requirements.lock`，固定直接/传递依赖及发布包哈希。这不是历史环境的 freeze。锁面向本机 macOS Apple Silicon / Python 3.12，其他操作系统或 CUDA 环境需单独解析；完整服务运行还需要模型、API 凭据及数据库。
+
+```bash
+uv venv .venv --python 3.12
+uv pip sync requirements.lock --require-hashes
+uv pip install --no-deps -e .
+```
+
+`requirements.lock` 是 uv pip 格式锁，恢复时使用以上命令。后续增加依赖后需重新生成锁，不能只改宽松版本声明。升级命令（先评估兼容性）：`uv pip compile pyproject.toml archive-extras.in --python-version 3.12 --generate-hashes -o requirements.lock`。
+锁定覆盖运行时缺失的 mlx-lm 和食物评测使用的 timm；原 dev extra 中 langgraph-api>=0.7 与 google-generativeai 的 protobuf 约束冲突，不能合并安装，因此未纳入主环境锁。`archive-extras.in` 保存额外输入。
+
+### 模型和参数需求
+
+当前意图路由直接加载 `~/.omlx/models/Qwen3.5-9B-OptiQ-4bit`（源代码中是原机器的绝对路径），依赖 MLX/Apple Silicon；迁移时需修改 router.py 的 MODEL_PATH。该目录在 legacy 外，本次未清理。训练实验还引用 Qwen3.5-0.8B-OptiQ-4bit / gemma-4-e4b-it-4bit。食物模型为 EfficientNet-B0，分类头 1280→256→5，Dropout 0.3，输入 224×224，输出重量/热量/脂肪/碳水/蛋白质；必须同时保留 `src/langgraph_app/agents/food_recognition/model/best_model.pt` 和 `norm_stats.json`。这些自训练权重、eval 下的训练模型和 LoRA adapters 均保留，不能仅凭模型名重新下载。Gemini 默认 gemini-2.5-flash-lite；其他 provider 配置见 config.py 和 .env.example。
+
+.env 和实际凭据保留在本地，不纳入提交。Python 缓存、工具缓存和可重建环境可删除；业务数据、自训练模型、评测结果及 Git 历史保留。
